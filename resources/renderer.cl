@@ -300,7 +300,7 @@ float3 tonemap(const float3 col, const float g) {
 TRay cameraRayLookat(global const TRenderOptions* opts, const TRenderState* state) {
   float3 forward = normalize(opts->targetPos - state->eyePos);
   float3 right = normalize(cross(forward, opts->up));
-  float2 viewCoord = state->pixelPos / opts->resolution * 2.0f - 1.0f;
+  float2 viewCoord = state->pixelPos / (float2)(opts->resolution.x, opts->resolution.y) * 2.0f - 1.0f;
   viewCoord.y *= opts->invAspect;
   TRay ray;
   ray.pos = state->eyePos;
@@ -314,7 +314,7 @@ TRenderState initRenderState(global const TRenderOptions* opts, const int id) {
   float4 s2 = sin((float4)(opts->time * 1.3422f + p.y) * (float4)(567.324234f, 435.324234f, 432.324234f, 657.324234f)) * 654.5423f;
   TRenderState state;
   float4 tmp;
-  //state.mcPos = fract((float4)(2142.4f) + s1 + s2, &tmp);
+  state.mcPos = fract((float4)(2142.4f) + s1 + s2, &tmp);
   state.mcNormal = normalize(state.mcPos.xyz - 0.5f);
   state.pixelPos = p + state.mcPos.zw;
   state.eyePos = opts->eyePos + state.mcNormal * opts->dof;
@@ -331,7 +331,7 @@ __kernel void renderImage(global const float* voxels,
     TRenderState state = initRenderState(opts, id);
     TRay ray = cameraRayLookat(opts, &state);
     float3 sceneCol = sceneColor(voxels, opts, &state, &ray) * opts->exposure;
-    float4 prevCol = pixels[id] + (state.mcPos.xyz - 0.4f) * (1.0f / 255.0f);
+    float4 prevCol = pixels[id] + (state.mcPos - 0.4f) * (1.0f / 255.0f);
     float4 finalCol = mix(prevCol, (float4)(sceneCol, 1.0f), opts->frameBlend);
     pixels[id] = clamp(finalCol, (float4)(0.0f), (float4)(1.0f));
   }
