@@ -151,10 +151,6 @@ void raymarch(global const float* voxels, global const TRenderOptions* opts,
 
 TMaterial objectMaterial(global const TRenderOptions* opts, const int objectID) {
   return opts->materials[objectID];
-  //if(objectID.x < 1.5) {
-  //  return opts->materials[0];
-  //}
-  //return opts->materials[1];
 }
 
 float3 lightPos(global const TRenderOptions* opts, const TRenderState* state) {
@@ -167,7 +163,11 @@ float3 reflect(const float3 v, const float3 n){
 
 float3 applyAtmosphere(global const TRenderOptions* opts,
                        const TRenderState* state, const TRay* ray, const TIsec* isec, float3 col) {
-  col = mix(opts->skyColor, col, exp(isec->distance * isec->distance * -opts->fogDensity));
+  float fa = exp(isec->distance * isec->distance * -opts->fogDensity);
+  //float3 col = mix(opts->skyColor), col, fa);
+  col = (float3)(mix(opts->skyColor.x, col.x, fa),
+                 mix(opts->skyColor.y, col.y, fa),
+                 mix(opts->skyColor.z, col.z, fa));
   float3 lp = lightPos(opts, state);
   float d = clamp(dot(lp - ray->pos, ray->dir), 0.0f, isec->distance);
   lp = ray->pos + ray->dir * d - lp;
@@ -238,9 +238,11 @@ float3 objectLighting(global const float* voxels, global const TRenderOptions* o
   diffReflect *= mat.albedo;
 
   // specular
-  float3 sceneCol = mix(diffReflect, specReflect, schlick(mat, normal, ray->dir));
-  //float3 sceneCol = diffReflect;
-  return sceneCol;
+  float spec = schlick(mat, normal, ray->dir);
+  float3 col = (float3)(mix(diffReflect.x, specReflect.x, spec),
+                        mix(diffReflect.y, specReflect.y, spec),
+                        mix(diffReflect.z, specReflect.z, spec));
+  return col;
 }
 
 float3 basicSceneColor(global const float* voxels, global const TRenderOptions* opts,
@@ -332,8 +334,13 @@ __kernel void renderImage(global const float* voxels,
     TRay ray = cameraRayLookat(opts, &state);
     float3 sceneCol = sceneColor(voxels, opts, &state, &ray) * opts->exposure;
     float4 prevCol = pixels[id] + (state.mcPos - 0.4f) * (1.0f / 255.0f);
-    float4 finalCol = mix(prevCol, (float4)(sceneCol, 1.0f), opts->frameBlend);
-    pixels[id] = clamp(finalCol, (float4)(0.0f), (float4)(1.0f));
+    //float4 finalCol = mix(prevCol, (float4)(sceneCol, 1.0f), opts->frameBlend);
+    float4 finalCol = (float4)(mix(prevCol.x, sceneCol.x, opts->frameBlend),
+                               mix(prevCol.y, sceneCol.y, opts->frameBlend),
+                               mix(prevCol.z, sceneCol.z, opts->frameBlend),
+                               1.0f);
+    //float4 finalCol = (float4)(1.0f);
+    pixels[id] = min(max(finalCol, (float4)(0.0f)), (float4)(1.0f));
   }
 }
 
