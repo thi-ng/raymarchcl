@@ -65,6 +65,23 @@ typedef struct {
   TMaterial materials[2];
 } TRenderOptions;
 
+// http://stackoverflow.com/questions/9912143/how-to-get-a-random-number-in-opencl
+long rand(long seed) {
+  return (seed * 0x5DEECE66DL + 0xBL) & ((1L << 32) - 1);
+}
+
+float randf(long seed) {
+  return ((float)(seed) / (float)((1L << 32) - 1)) * 2.0f - 1.0f;
+}
+
+float4 randomVec4(long seed) {
+  long l1 = random(seed);
+  long l2 = random(l1);
+  long l3 = random(l2);
+  long l4 = random(l3);
+  return (float4)(randf(l1), randf(l2), randf(l3), randf(l4));
+}
+
 float4 distUnion(const float4 v1, const float4 v2) {
   return v1.x < v2.x ? v1 : v2;
 }
@@ -153,7 +170,7 @@ TMaterial objectMaterial(global const TRenderOptions* opts, const int objectID) 
 }
 
 float3 lightPos(global const TRenderOptions* opts, const TRenderState* state) {
-  return opts->lightPos + state->mcNormal * opts->lightScatter;
+  return opts->lightPos + randomVec4((long)(state->pixelPos.x * 1e5f)).xyz * opts->lightScatter;
 }
 
 float3 reflect(const float3 v, const float3 n){
@@ -210,7 +227,8 @@ float ambientOcclusion(global const float* voxels, global const TRenderOptions* 
   float d = 0.0f;
   for(int i = 0; i <= opts->aoIter; i++) {
     d += opts->aoStepDist;
-    float4 sceneDist = distanceToScene(voxels, opts, pos + normal * d, normal, opts->aoIter);
+    float3 n = normalize(normal + 0.2f * randomVec4((long)(i) + (long)(pos.x * 1e6)).xyz);
+    float4 sceneDist = distanceToScene(voxels, opts, pos + n * d, n, opts->maxIter);
     ao *= 1.0f - max(0.0f, (d - sceneDist.x) * opts->aoAmp / d );
   }
   return ao;
@@ -312,12 +330,14 @@ TRay cameraRayLookat(global const TRenderOptions* opts, const TRenderState* stat
 
 TRenderState initRenderState(global const TRenderOptions* opts, const int id) {
   float2 p = (float2)(id % opts->resolution.x, id / opts->resolution.x);
-  float4 s1 = sin((float4)(opts->time * 3.3422f + p.x) * (float4)(324.324234f, 563.324234f, 657.324234f, 764.324234f)) * 543.3423f;
-  float4 s2 = sin((float4)(opts->time * 1.3622f + p.y) * (float4)(567.324234f, 435.324234f, 432.324234f, 657.324234f)) * 654.5423f;
+  //  float4 s1 = sin((float4)(opts->time * 3.3422f + p.x) * (float4)(324.324234f, 563.324234f, 657.324234f, 764.324234f)) * 543.3423f;
+  //  float4 s2 = sin((float4)(opts->time * 1.3622f + p.y) * (float4)(567.324234f, 435.324234f, 432.324234f, 657.324234f)) * 654.5423f;
   TRenderState state;
   float4 tmp;
-  state.mcPos = fract((float4)(2142.4f) + s1 + s2, &tmp);
-  state.mcNormal = normalize(state.mcPos.xyz - 0.5f);
+  //  state.mcPos = fract((float4)(2142.4f) + s1 + s2, &tmp);
+  state.mcPos = randomVec4((long)id + (long)(opts->time * 1e3f));
+  //state.mcNormal = normalize(state.mcPos.xyz - 0.5f);
+  state.mcNormal = normalize(randomVec4((long)id + (long)(opts->time * 3e3f)).xyz);
   state.pixelPos = p + state.mcPos.zw;
   state.eyePos = opts->eyePos + state.mcNormal.zxy * opts->dof;
   return state;
@@ -361,5 +381,6 @@ __kernel void TonemapImage(global const float4* pixels,
     //rgba[id] = 0xff000000 | (char*)&opts->materials[0].r0 - (char*)opts;
     //rgba[id] = (int)(opts->gamma);
     //rgba[id] = sizeof(TMaterial);
+    //rgba[id] = (int)random((long)id);
   }
 }
