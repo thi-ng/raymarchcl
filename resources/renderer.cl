@@ -62,7 +62,7 @@ typedef struct {
   float fogDensity;
   float flareAmp;
   float4 normOffsets[4];
-  TMaterial materials[2];
+  TMaterial materials[4];
 } TRenderOptions;
 
 // http://stackoverflow.com/questions/9912143/how-to-get-a-random-number-in-opencl
@@ -112,12 +112,16 @@ float voxelLookup(global const float* voxels, global const TRenderOptions* opts,
   return voxelDataAt(voxels, opts->voxelRes, pv);
 }
 
+float voxelMaterial(global const TRenderOptions* opts, float v) {
+  return (v < 0.66 ? (v < 0.33 ? 1.0f : 2.0f) : 3.0f);
+}
+
 float4 distanceToScene(global const float* voxels, global const TRenderOptions* opts,
                        const float3 rpos, const float3 dir, const int steps) {
   float4 res = distUnion((float4)(rpos.y + opts->groundY, 0.0, rpos.xz), (float4)(10000.0f, -1.0f, 0.0f, 0.0f));
   float idist = intersectsBox(opts->voxelBoundsMin, opts->voxelBoundsMax, rpos, dir);
   if (idist >= 0.0f && idist < res.x) {
-    float3 delta = dir / (float3)(steps) * opts->invVoxelScale;
+    float3 delta = dir / (float3)(steps/2.0f) * opts->invVoxelScale;
     float3 p = rpos + opts->voxelBounds;
     if (idist > 0.0f) p += dir * idist;
     p *= opts->invVoxelScale;
@@ -125,7 +129,7 @@ float4 distanceToScene(global const float* voxels, global const TRenderOptions* 
       float v = voxelLookup(voxels, opts, p);
       if (v > opts->isoVal) {
         float d = length(rpos - (p * opts->voxelBounds2 - opts->voxelBounds)) - opts->voxelSize;
-        return distUnion((float4)(d, 1.0f, 0.0f, 0.0f), res);
+        return distUnion((float4)(d, voxelMaterial(opts, v), 0.0f, 0.0f), res);
       }
       p += delta;
     }
@@ -135,10 +139,10 @@ float4 distanceToScene(global const float* voxels, global const TRenderOptions* 
 
 float3 sceneNormal(global const float* voxels, global const TRenderOptions* opts,
                    const float3 p, const float3 dir) {
-  const float f1 = distanceToScene(voxels, opts, p + opts->normOffsets[0].xyz, dir, opts->maxIter).x;
-  const float f2 = distanceToScene(voxels, opts, p + opts->normOffsets[1].xyz, dir, opts->maxIter).x;
-  const float f3 = distanceToScene(voxels, opts, p + opts->normOffsets[2].xyz, dir, opts->maxIter).x;
-  const float f4 = distanceToScene(voxels, opts, p + opts->normOffsets[3].xyz, dir, opts->maxIter).x;
+  const float f1 = distanceToScene(voxels, opts, p + opts->normOffsets[0].xyz, dir, opts->maxVoxelIter).x;
+  const float f2 = distanceToScene(voxels, opts, p + opts->normOffsets[1].xyz, dir, opts->maxVoxelIter).x;
+  const float f3 = distanceToScene(voxels, opts, p + opts->normOffsets[2].xyz, dir, opts->maxVoxelIter).x;
+  const float f4 = distanceToScene(voxels, opts, p + opts->normOffsets[3].xyz, dir, opts->maxVoxelIter).x;
   return normalize(opts->normOffsets[0].xyz * f1 + opts->normOffsets[1].xyz * f2 +
                    opts->normOffsets[2].xyz * f3 + opts->normOffsets[3].xyz * f4);
 }
