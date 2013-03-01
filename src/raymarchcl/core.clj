@@ -15,6 +15,16 @@
 (sg/reset-registry!)
 (sg/register! (sp/parse-specs (slurp (clu/resource-stream cl-program))))
 
+(defn montecarlo
+  [num]
+  (let [rnd (java.util.Random. (System/nanoTime))
+        rv #(float (- (* 2.0 (.nextDouble rnd)) 1.0))]
+    (vec
+     (for [i (range num)
+           :let [x (rv) y (rv) z (rv) w (rv)
+                 m (/ 1.0 (Math/sqrt (+ (* x x) (* y y) (* z z) (* w w))))]]
+       [(* x m) (* y m) (* z m) (* w m)]))))
+
 (defn render-options
   [{:keys [width height vres t iter eyepos]}]
   (let [d 0.005]
@@ -59,7 +69,8 @@
      :invVoxelScale [0.5 0.5 0.5]
      :up [0 1 0]
      :voxelBounds [1 1 1]
-     :gamma 1.5}))
+     :gamma 1.5
+     :mcSamples (montecarlo 0x4000)}))
 
 (defn gyroid [s t p o]
   "Evaluates gyroid function at scaled point `v`."
@@ -111,7 +122,7 @@
   (let [t-opts (sg/lookup :TRenderOptions)]
     (vec
      (for [i (range n)]
-       (cl/as-clbuffer (sg/encode t-opts (render-options (assoc opts :t (* i 0.1)))) :readonly)))))
+       (cl/as-clbuffer (sg/encode t-opts (render-options (assoc opts :t (* i 0.333)))) :readonly)))))
 
 (defn update-option-buffers
   [buffers opts]
@@ -121,7 +132,7 @@
            :let [b (get buffers i)]]
        (do
          (cl/rewind b)
-         (cl/into-buffer b (sg/encode t-opts (render-options (assoc opts :t (* i 0.1)))))
+         (cl/into-buffer b (sg/encode t-opts (render-options (assoc opts :t (* i 0.3333)))))
          (cl/rewind b))))))
 
 (defn init-renderer
@@ -130,7 +141,7 @@
     (cl/with-state cl-state
       (println "build log: ")
       (println :cpu (cl/build-log (:program cl-state) (cl/max-device (:ctx cl-state) :cpu)))
-      ;; (println :gpu (cl/build-log (:program cl-state) (cl/max-device (:ctx cl-state) :gpu)))
+      (println :gpu (cl/build-log (:program cl-state) (cl/max-device (:ctx cl-state) :gpu)))
       (let [num (* width height)
             state (time
                    (merge
@@ -192,3 +203,7 @@
            (pix/set-pixels img img-pix)
            (pix/save-png img (format "anim-%03d.png" frame)))))
       (cl/release (:ctx (:cl-state state))))))
+
+(defn rand2
+  [seed]
+  (bit-and (long (+ (* (bit-and seed 0xffffff) 0x5deece66d) 11)) (long 0xffffffff)))

@@ -18,10 +18,11 @@ typedef struct {
 } TMaterial;
 
 typedef struct {
-  float2 pixelPos;
   float3 eyePos;
   float4 mcPos;
   float3 mcNormal;
+  float2 pixelPos;
+  float seed;
 } TRenderState;
 
 typedef struct {
@@ -63,23 +64,11 @@ typedef struct {
   float flareAmp;
   float4 normOffsets[4];
   TMaterial materials[4];
+  float4 mcSamples[16384];
 } TRenderOptions;
 
-// http://stackoverflow.com/questions/9912143/how-to-get-a-random-number-in-opencl
-long rand(long seed) {
-  return (seed * 0x5DEECE66DL + 0xBL) & ((1L << 32) - 1);
-}
-
-float randf(long seed) {
-  return ((float)(seed) / (float)((1L << 32) - 1)) * 2.0f - 1.0f;
-}
-
-float4 randomVec4(long seed) {
-  long l1 = random(seed);
-  long l2 = random(l1);
-  long l3 = random(l2);
-  long l4 = random(l3);
-  return (float4)(randf(l1), randf(l2), randf(l3), randf(l4));
+float4 randFloat4(global const TRenderOptions* opts, ulong seed) {
+  return opts->mcSamples[seed & 0x3fff];
 }
 
 float4 distUnion(const float4 v1, const float4 v2) {
@@ -174,7 +163,8 @@ TMaterial objectMaterial(global const TRenderOptions* opts, const int objectID) 
 }
 
 float3 lightPos(global const TRenderOptions* opts, const TRenderState* state) {
-  return opts->lightPos + randomVec4((long)(state->pixelPos.x * 1e5f)).xyz * opts->lightScatter;
+  ulong seed = (ulong)(state->pixelPos.x * 1957.0f + state->pixelPos.y * 2173.0f + opts->time * 4763.742f);
+  return opts->lightPos + randFloat4(opts, seed).xyz * opts->lightScatter;
 }
 
 float3 reflect(const float3 v, const float3 n){
@@ -229,9 +219,10 @@ float blinnPhongIntensity(const TMaterial mat, const TRay* ray, const float3 lig
 float ambientOcclusion(global const float* voxels, global const TRenderOptions* opts, const float3 pos, const float3 normal) {
   float ao = 1.0f;
   float d = 0.0f;
+  ulong seed = (ulong)(pos.x * 3183.75f + pos.y * 1831.42f + pos.z * 2945.87f + opts->time * 2671.918f);
   for(int i = 0; i <= opts->aoIter; i++) {
     d += opts->aoStepDist;
-    float3 n = normalize(normal + 0.2f * randomVec4((long)(i) + (long)(pos.x * 1e6)).xyz);
+    float3 n = normalize(normal + 0.2f * randFloat4(opts, seed + i * 37).xyz);
     float4 sceneDist = distanceToScene(voxels, opts, pos + n * d, n, opts->maxIter);
     ao *= 1.0f - max(0.0f, (d - sceneDist.x) * opts->aoAmp / d );
   }
@@ -334,14 +325,10 @@ TRay cameraRayLookat(global const TRenderOptions* opts, const TRenderState* stat
 
 TRenderState initRenderState(global const TRenderOptions* opts, const int id) {
   float2 p = (float2)(id % opts->resolution.x, id / opts->resolution.x);
-  //  float4 s1 = sin((float4)(opts->time * 3.3422f + p.x) * (float4)(324.324234f, 563.324234f, 657.324234f, 764.324234f)) * 543.3423f;
-  //  float4 s2 = sin((float4)(opts->time * 1.3622f + p.y) * (float4)(567.324234f, 435.324234f, 432.324234f, 657.324234f)) * 654.5423f;
   TRenderState state;
   float4 tmp;
-  //  state.mcPos = fract((float4)(2142.4f) + s1 + s2, &tmp);
-  state.mcPos = randomVec4((long)id + (long)(opts->time * 1e3f));
-  //state.mcNormal = normalize(state.mcPos.xyz - 0.5f);
-  state.mcNormal = normalize(randomVec4((long)id + (long)(opts->time * 3e3f)).xyz);
+  state.mcPos = randFloat4(opts, (ulong)(id * 17) + (ulong)(opts->time * 3141.3862f));
+  state.mcNormal = normalize(randFloat4(opts, (ulong)(id * 37) + (ulong)(opts->time * 1859.1467f)).xyz);
   state.pixelPos = p + state.mcPos.zw;
   state.eyePos = opts->eyePos + state.mcNormal.zxy * opts->dof;
   return state;
