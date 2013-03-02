@@ -220,7 +220,7 @@ float ambientOcclusion(global const float* voxels, global const TRenderOptions* 
   float ao = 1.0f;
   float d = 0.0f;
   uint seed = (uint)(pos.x * 3183.75f + pos.y * 1831.42f + pos.z * 2945.87f + opts->time * 2671.918f);
-  for(int i = 0; i <= opts->aoIter; i++) {
+  for(int i = 0; i <= opts->aoIter && ao > 0.01; i++) {
     d += opts->aoStepDist;
     float3 n = normalize(normal + 0.2f * randFloat4(opts, seed + i * 37).xyz);
     float4 sceneDist = distanceToScene(voxels, opts, pos + n * d, n, opts->maxIter);
@@ -287,11 +287,15 @@ float3 sceneColor(global const float* voxels, global const TRenderOptions* opts,
     const TMaterial mat = objectMaterial(opts, isec.objectID);
     float3 norm = sceneNormal(voxels, opts, isec.pos, ray->dir);
     norm = normalize(norm + state->mcNormal / (5.0f + mat.smoothness * 200.0f));
-
-    TRay reflectRay;
-    reflectRay.dir = reflect(ray->dir, norm);
-    reflectRay.pos = isec.pos + reflectRay.dir * 0.05f; // TODO opts->reflectSeperation
-    float3 reflectCol = basicSceneColor(voxels, opts, state, &reflectRay);
+    float3 reflectCol;
+    if (mat.r0 > 0.0) {
+      TRay reflectRay;
+      reflectRay.dir = reflect(ray->dir, norm);
+      reflectRay.pos = isec.pos + reflectRay.dir * 0.05f; // TODO opts->reflectSeperation
+      reflectCol = basicSceneColor(voxels, opts, state, &reflectRay);
+    } else {
+      reflectCol = opts->skyColor;
+    }
     sceneCol = objectLighting(voxels, opts, state, ray, &isec, mat, norm, reflectCol);
   }
   sceneCol = applyAtmosphere(opts, state, ray, &isec, sceneCol);
