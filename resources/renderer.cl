@@ -76,6 +76,16 @@ float4 distUnion(const float4 v1, const float4 v2) {
   return v1.x < v2.x ? v1 : v2;
 }
 
+float trilinear(float n000, float n001, float n010, float n011,
+                float n100, float n101, float n110, float n111,
+                float fx, float fy, float fz) {
+  float nx = mix(n000, n100, fx);
+  float ny = mix(n001, n101, fx);
+  float nz = mix(n010, n110, fx);
+  float nw = mix(n011, n111, fx);
+  return mix(mix(nx, nz, fy), mix(ny, nw, fy), fz);
+}
+
 /**
  * @returns distance to box or -1 if no isec
  */
@@ -100,7 +110,31 @@ float voxelLookup(global const float* voxels, global const TRenderOptions* opts,
   int3 pv = (int3)(p.x * opts->voxelRes.x, p.y * opts->voxelRes.y, p.z * opts->voxelRes.z);
   return voxelDataAt(voxels, opts->voxelRes, pv);
 }
+/*
+float voxelDataAt(global const float* voxels, const int3 res, const int3 p) {
+  return voxels[p.z * res.x * res.y + p.y * res.x + p.x];
+}
 
+float voxelLookup(global const float* voxels, global const TRenderOptions* opts, const float3 p) {
+  int3 res = opts->voxelRes;
+  float3 pv = (float3)(p.x * res.x, p.y * res.y, p.z * res.z);
+  int3 pi = (int3)(pv.x, pv.y, pv.z);
+  if (pi.x >= 0 && pi.x < res.x-1 && pi.y >= 0 && pi.y < res.y-1 && pi.z >= 0 && pi.z < res.z-1) {
+    int3 qi = pi + (int3)(1,1,1);
+    float n000 = voxelDataAt(voxels, res, pi);
+    float n001 = voxelDataAt(voxels, res, (int3)(pi.x, pi.y, qi.z));
+    float n010 = voxelDataAt(voxels, res, (int3)(pi.x, qi.y, pi.z));
+    float n011 = voxelDataAt(voxels, res, (int3)(pi.x, pi.y, qi.z));
+    float n100 = voxelDataAt(voxels, res, (int3)(qi.x, pi.y, pi.z));
+    float n101 = voxelDataAt(voxels, res, (int3)(qi.x, pi.y, qi.z));
+    float n110 = voxelDataAt(voxels, res, (int3)(qi.x, qi.y, pi.z));
+    float n111 = voxelDataAt(voxels, res, (int3)(qi.x, qi.y, qi.z));
+    return trilinear(n000, n001, n010, n011, n100, n101, n110, n111,
+                     p.x-(float)(pi.x), p.y-(float)(pi.y), p.z-(float)(pi.z));
+  }
+  return 0.0f;
+}
+*/
 float voxelMaterial(global const TRenderOptions* opts, float v) {
   return (v < 0.66 ? (v < 0.33 ? 1.0f : 2.0f) : 3.0f);
 }
