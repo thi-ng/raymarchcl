@@ -67,7 +67,7 @@ typedef struct {
   float4 mcSamples[16384];
 } TRenderOptions;
 
-float4 randFloat4(global const TRenderOptions* opts, ulong seed) {
+float4 randFloat4(global const TRenderOptions* opts, uint seed) {
   return opts->mcSamples[seed & 0x3fff];
 }
 
@@ -96,7 +96,6 @@ float voxelDataAt(global const float* voxels, const int3 res, const int3 p) {
 }
 
 float voxelLookup(global const float* voxels, global const TRenderOptions* opts, const float3 p) {
-  //float3 pv = p * (float3)(opts->voxelRes.x, opts->voxelRes.y, opts->voxelRes.z);
   int3 pv = (int3)(p.x * opts->voxelRes.x, p.y * opts->voxelRes.y, p.z * opts->voxelRes.z);
   return voxelDataAt(voxels, opts->voxelRes, pv);
 }
@@ -163,7 +162,7 @@ TMaterial objectMaterial(global const TRenderOptions* opts, const int objectID) 
 }
 
 float3 lightPos(global const TRenderOptions* opts, const TRenderState* state) {
-  ulong seed = (ulong)(state->pixelPos.x * 1957.0f + state->pixelPos.y * 2173.0f + opts->time * 4763.742f);
+  uint seed = (uint)(state->pixelPos.x * 1957.0f + state->pixelPos.y * 2173.0f + opts->time * 4763.742f);
   return opts->lightPos + randFloat4(opts, seed).xyz * opts->lightScatter;
 }
 
@@ -174,7 +173,6 @@ float3 reflect(const float3 v, const float3 n){
 float3 applyAtmosphere(global const TRenderOptions* opts,
                        const TRenderState* state, const TRay* ray, const TIsec* isec, float3 col) {
   float fa = exp(isec->distance * isec->distance * -opts->fogDensity);
-  //float3 col = mix(opts->skyColor), col, fa);
   col = (float3)(mix(opts->skyColor.x, col.x, fa),
                  mix(opts->skyColor.y, col.y, fa),
                  mix(opts->skyColor.z, col.z, fa));
@@ -206,7 +204,8 @@ float diffuseIntensity(const float3 ldir, const float3 normal) {
   return max(0.0f, dot(ldir, normal));
 }
 
-float blinnPhongIntensity(const TMaterial mat, const TRay* ray, const float3 lightDir, const float3 normal) {
+float blinnPhongIntensity(const TMaterial mat, const TRay* ray,
+                          const float3 lightDir, const float3 normal) {
   float3 vHalf = normalize(lightDir - ray->dir);
   float nh = dot(vHalf, normal);
   if (nh > 0.0f) {
@@ -216,10 +215,11 @@ float blinnPhongIntensity(const TMaterial mat, const TRay* ray, const float3 lig
   return 0.0f;
 }
 
-float ambientOcclusion(global const float* voxels, global const TRenderOptions* opts, const float3 pos, const float3 normal) {
+float ambientOcclusion(global const float* voxels, global const TRenderOptions* opts,
+                       const float3 pos, const float3 normal) {
   float ao = 1.0f;
   float d = 0.0f;
-  ulong seed = (ulong)(pos.x * 3183.75f + pos.y * 1831.42f + pos.z * 2945.87f + opts->time * 2671.918f);
+  uint seed = (uint)(pos.x * 3183.75f + pos.y * 1831.42f + pos.z * 2945.87f + opts->time * 2671.918f);
   for(int i = 0; i <= opts->aoIter; i++) {
     d += opts->aoStepDist;
     float3 n = normalize(normal + 0.2f * randFloat4(opts, seed + i * 37).xyz);
@@ -235,21 +235,19 @@ float3 objectLighting(global const float* voxels, global const TRenderOptions* o
   float ao = ambientOcclusion(voxels, opts, isec->pos, normal);
   float3 diffReflect = opts->skyColor * ao;
   float3 specReflect = reflectCol * ao;
-
   // point light
   float3 deltaLight = lightPos(opts, state) - isec->pos;
   float lightDist = dot(deltaLight, deltaLight);
   float att = 1.0f / lightDist;
   if (att > opts->minLightAtt) {
     float3 lightDir = normalize(deltaLight);
-    float shadowFactor = shadow(voxels, opts, isec->pos + lightDir * opts->shadowBias, lightDir, min(sqrt(lightDist) - opts->shadowBias, opts->maxDist));
+    float shadowFactor = shadow(voxels, opts, isec->pos + lightDir * opts->shadowBias,
+                                lightDir, min(sqrt(lightDist) - opts->shadowBias, opts->maxDist));
     float3 incidentLight = opts->lightColor * shadowFactor * att;
     diffReflect += diffuseIntensity(lightDir, normal) * incidentLight;
     specReflect += blinnPhongIntensity(mat, ray, lightDir, normal) * incidentLight;
   }
-
   diffReflect *= mat.albedo.xyz;
-
   // specular
   float spec = schlick(mat, normal, ray->dir);
   float3 col = (float3)(mix(diffReflect.x, specReflect.x, spec),
@@ -304,10 +302,6 @@ float3 gamma(const float3 col) {
   return col * col;
 }
 
-float3 invGamma(const float3 col) {
-  return sqrt(col);
-}
-
 float3 tonemap(const float3 col, const float g) {
   return gamma(col / (g + col));
 }
@@ -326,9 +320,8 @@ TRay cameraRayLookat(global const TRenderOptions* opts, const TRenderState* stat
 TRenderState initRenderState(global const TRenderOptions* opts, const int id) {
   float2 p = (float2)(id % opts->resolution.x, id / opts->resolution.x);
   TRenderState state;
-  float4 tmp;
-  state.mcPos = randFloat4(opts, (ulong)(id * 17) + (ulong)(opts->time * 3141.3862f));
-  state.mcNormal = normalize(randFloat4(opts, (ulong)(id * 37) + (ulong)(opts->time * 1859.1467f)).xyz);
+  state.mcPos = randFloat4(opts, (uint)(id * 17) + (uint)(opts->time * 3141.3862f));
+  state.mcNormal = normalize(randFloat4(opts, (uint)(id * 37) + (uint)(opts->time * 1859.1467f)).xyz);
   state.pixelPos = p + state.mcPos.zw;
   state.eyePos = opts->eyePos + state.mcNormal.zxy * opts->dof;
   return state;
@@ -338,22 +331,17 @@ __kernel void RenderImage(global const float* voxels,
                           global const TRenderOptions* opts,
                           global float4* pixels,
                           const int n) {
-
   int id = get_global_id(0);
   if (id < n) {
     TRenderState state = initRenderState(opts, id);
     TRay ray = cameraRayLookat(opts, &state);
     float3 sceneCol = sceneColor(voxels, opts, &state, &ray) * opts->exposure;
     float4 prevCol = pixels[id] + (state.mcPos - 0.4f) * (1.0f / 255.0f);
-    //float4 finalCol = mix(prevCol, (float4)(sceneCol, 1.0f), opts->frameBlend);
     float4 finalCol = (float4)(mix(prevCol.x, sceneCol.x, opts->frameBlend),
                                mix(prevCol.y, sceneCol.y, opts->frameBlend),
                                mix(prevCol.z, sceneCol.z, opts->frameBlend),
                                1.0f);
-    //float4 finalCol = (float4)(sceneCol, 1.0f);
-    //float4 finalCol = (float4)((float)(id) / (float)(n));
     pixels[id] = finalCol;
-    //pixels[id] = min(max(finalCol, (float4)(0.0f)), (float4)(1.0f));
   }
 }
 
@@ -364,14 +352,9 @@ __kernel void TonemapImage(global const float4* pixels,
   int id = get_global_id(0);
   if (id < n) {
     float3 col = tonemap(pixels[id].xyz, opts->gamma);
-    //float3 col = pixels[id].xyz;
     int r = (int)(min(max(col.x * 255.0f, 0.0f), 255.0f));
     int g = (int)(min(max(col.y * 255.0f, 0.0f), 255.0f));
     int b = (int)(min(max(col.z * 255.0f, 0.0f), 255.0f));
     rgba[id] = 0xff000000 | (r << 16) | (g << 8) | b;
-    //rgba[id] = 0xff000000 | (char*)&opts->materials[0].r0 - (char*)opts;
-    //rgba[id] = (int)(opts->gamma);
-    //rgba[id] = sizeof(TMaterial);
-    //rgba[id] = (int)random((long)id);
   }
 }
