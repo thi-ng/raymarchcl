@@ -34,7 +34,8 @@ typedef struct {
   float3 voxelBoundsMin;
   float3 voxelBoundsMax;
   float3 invVoxelScale;
-  float3 skyColor;
+  float3 skyColor1;
+  float3 skyColor2;
   float3 lightPos;
   float3 lightColor;
   int3 voxelRes;
@@ -161,6 +162,10 @@ TMaterial objectMaterial(global const TRenderOptions* opts, const int objectID) 
   return opts->materials[objectID];
 }
 
+float3 skyGradient(global const TRenderOptions* opts, const float3 dir) {
+  return mix(opts->skyColor1, opts->skyColor2, dir.y * 0.5f + 0.5f);
+}
+
 float3 lightPos(global const TRenderOptions* opts, const TRenderState* state) {
   uint seed = (uint)(state->pixelPos.x * 1957.0f + state->pixelPos.y * 2173.0f + opts->time * 4763.742f);
   return opts->lightPos + randFloat4(opts, seed).xyz * opts->lightScatter;
@@ -173,9 +178,10 @@ float3 reflect(const float3 v, const float3 n){
 float3 applyAtmosphere(global const TRenderOptions* opts,
                        const TRenderState* state, const TRay* ray, const TIsec* isec, float3 col) {
   float fa = exp(isec->distance * isec->distance * -opts->fogDensity);
-  col = (float3)(mix(opts->skyColor.x, col.x, fa),
-                 mix(opts->skyColor.y, col.y, fa),
-                 mix(opts->skyColor.z, col.z, fa));
+  float3 fogCol = skyGradient(opts, ray->dir);
+  col = (float3)(mix(fogCol.x, col.x, fa),
+                 mix(fogCol.y, col.y, fa),
+                 mix(fogCol.z, col.z, fa));
   float3 lp = lightPos(opts, state);
   float d = clamp(dot(lp - ray->pos, ray->dir), 0.0f, isec->distance);
   lp = ray->pos + ray->dir * d - lp;
@@ -233,7 +239,7 @@ float3 objectLighting(global const float* voxels, global const TRenderOptions* o
                       const TRenderState* state, const TRay* ray, TIsec* isec,
                       const TMaterial mat, const float3 normal, const float3 reflectCol) {
   float ao = ambientOcclusion(voxels, opts, isec->pos, normal);
-  float3 diffReflect = opts->skyColor * ao;
+  float3 diffReflect = skyGradient(opts, normal) * ao;
   float3 specReflect = reflectCol * ao;
   // point light
   float3 deltaLight = lightPos(opts, state) - isec->pos;
@@ -264,14 +270,14 @@ float3 basicSceneColor(global const float* voxels, global const TRenderOptions* 
   float3 sceneCol;
 
   if(isec.objectID < 0) {
-    sceneCol = opts->skyColor; //skyGradient(ray.dir);
+    sceneCol = skyGradient(opts, ray->dir);
   } else {
     const TMaterial mat = objectMaterial(opts, isec.objectID);
     float3 norm = sceneNormal(voxels, opts, isec.pos, ray->dir);
     // use sky gradient instead of reflection
-    //float3 reflectCol = skyColor; //skyGradient(reflect(ray.dir, n));
+    float3 reflectCol = skyGradient(opts, reflect(ray->dir, norm));
     // apply lighting
-    sceneCol = objectLighting(voxels, opts, state, ray, &isec, mat, norm, opts->skyColor);
+    sceneCol = objectLighting(voxels, opts, state, ray, &isec, mat, norm, reflectCol);
   }
   return applyAtmosphere(opts, state, ray, &isec, sceneCol);
 }
@@ -282,7 +288,7 @@ float3 sceneColor(global const float* voxels, global const TRenderOptions* opts,
   raymarch(voxels, opts, ray, &isec, opts->maxDist, opts->maxIter);
   float3 sceneCol;
   if(isec.objectID < 0) {
-    sceneCol = opts->skyColor; //skyGradient(ray.dir);
+    sceneCol = skyGradient(opts, ray->dir);
   } else {
     const TMaterial mat = objectMaterial(opts, isec.objectID);
     float3 norm = sceneNormal(voxels, opts, isec.pos, ray->dir);
@@ -294,7 +300,7 @@ float3 sceneColor(global const float* voxels, global const TRenderOptions* opts,
       reflectRay.pos = isec.pos + reflectRay.dir * 0.05f; // TODO opts->reflectSeperation
       reflectCol = basicSceneColor(voxels, opts, state, &reflectRay);
     } else {
-      reflectCol = opts->skyColor;
+      reflectCol = skyGradient(opts, reflect(ray->dir, norm));
     }
     sceneCol = objectLighting(voxels, opts, state, ray, &isec, mat, norm, reflectCol);
   }
