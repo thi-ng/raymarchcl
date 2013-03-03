@@ -108,7 +108,7 @@
   (prn "volume " rx ry rz)
   (let [voxels (apply vector-of :float
                       (for [z (range rz) y (range ry) x (range rx)]
-                        (if (< (bit-and z 0x0f) 8)
+                        (if (< (bit-and z 0x1f) 16)
                           0.0
                           (let [v (gyroid 0.02625 1.0 [x y z] [0.3875 0.0 0.0])]
                             (if (< (Math/abs (- 0.2 v)) 0.05)
@@ -124,10 +124,12 @@
           y (.readInt in) ; resy
           z (.readInt in) ; resz
           s (.readByte in)
-          buf (cl/make-buffer :float (* x y z) :readonly)] ; element size in bytes
-      (while (pos? (.remaining buf))
-        (.put buf (float (if (pos? (.readByte in)) 0.25 0.0))))
-      (cl/rewind buf))))
+          vox (byte-array (* x y z))
+          _ (.read in vox 0 (count vox))
+          {:keys [v-buf]} (ops/init-buffers
+                           1 1
+                           :v-buf {:wrap (map #(if (zero? %) 0.0 0.5) vox) :type :float :usage :readonly})]
+      (cl/rewind v-buf))))
 
 (defn make-pipeline
   [{:keys [o-buffers v-buf p-buf q-buf num] :as args}]
@@ -188,10 +190,10 @@
                      :num num}
                     (ops/init-buffers
                      1 1
-                     :v-buf {:wrap (make-volume args) :type :float :usage :readonly}
+                     ;;:v-buf {:wrap (make-volume args) :type :float :usage :readonly}
                      :p-buf {:size (* num 4) :type :float :usage :readwrite}
                      :q-buf {:size num :type :int :usage :writeonly})
-                    ;;{:v-buf (load-volume "../toxi2/voxel-d8.vox")}
+                    {:v-buf (load-volume "../toxi2/voxel-d7.vox")}
                     ))]
         (assoc state :pipeline (make-pipeline state))))))
 
@@ -200,7 +202,7 @@
   (let [state (init-renderer {:width width :height height
                               :vres [res res res]
                               :iter iter
-                              :eyepos (compute-eyepos 45 2.25 0.25)
+                              :eyepos (compute-eyepos 45 1.0 0.25)
                               :mat mat})]
     (cl/with-state (:cl-state state)
       (let [argb (time (ops/execute-pipeline (:pipeline state) :verbose false :final-size (:num state)))
