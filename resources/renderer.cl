@@ -48,6 +48,7 @@ typedef struct {
   float startDist;
   float eps;
   int aoIter;
+  float aoMaxAmp;
   float aoStepDist;
   float aoAmp;
   float voxelSize;
@@ -270,7 +271,7 @@ float ambientOcclusion(global const uchar* voxels, global const TRenderOptions* 
     d += opts->aoStepDist;
     const float3 n = normalize(normal + 0.2f * randFloat4(opts, seed + i * 37).xyz);
     const float4 sceneDist = distanceToScene(voxels, opts, pos + n * d, n, opts->maxVoxelIter);
-    ao *= 1.0f - clamp((d - sceneDist.x) * opts->aoAmp / d, 0.0f, 0.1f);
+    ao *= 1.0f - clamp((d - sceneDist.x) * opts->aoAmp / d, 0.0f, opts->aoMaxAmp);
   }
   return ao;
 }
