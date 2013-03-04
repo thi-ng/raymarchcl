@@ -99,23 +99,23 @@ float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const 
   return b > a ? a : -1.0f;
 }
 
-float voxelDataAt(global const float* voxels, const int3 res, const int3 p) {
+float voxelDataAt(global const uchar* voxels, const int3 res, const int3 p) {
   if (p.x >= 0 && p.x < res.x && p.y >= 0 && p.y < res.y && p.z >= 0 && p.z < res.z) {
-    return voxels[p.z * res.x * res.y + p.y * res.x + p.x];
+    return (float)(voxels[p.z * res.x * res.y + p.y * res.x + p.x]) / 255.0;
   }
   return 0.0f;
 }
 
-float voxelLookup(global const float* voxels, global const TRenderOptions* opts, const float3 p) {
+float voxelLookup(global const uchar* voxels, global const TRenderOptions* opts, const float3 p) {
   int3 pv = (int3)(p.x * opts->voxelRes.x, p.y * opts->voxelRes.y, p.z * opts->voxelRes.z);
   return voxelDataAt(voxels, opts->voxelRes, pv);
 }
 /*
-float voxelDataAt(global const float* voxels, const int3 res, const int3 p) {
+float voxelDataAt(global const uchar* voxels, const int3 res, const int3 p) {
   return voxels[p.z * res.x * res.y + p.y * res.x + p.x];
 }
 
-float voxelLookup(global const float* voxels, global const TRenderOptions* opts, const float3 p) {
+float voxelLookup(global const uchar* voxels, global const TRenderOptions* opts, const float3 p) {
   int3 res = opts->voxelRes;
   float3 pv = (float3)(p.x * res.x, p.y * res.y, p.z * res.z);
   int3 pi = (int3)(pv.x, pv.y, pv.z);
@@ -139,7 +139,7 @@ float voxelMaterial(global const TRenderOptions* opts, float v) {
   return (v < 0.66 ? (v < 0.33 ? 1.0f : 2.0f) : 3.0f);
 }
 
-float4 distanceToScene(global const float* voxels, global const TRenderOptions* opts,
+float4 distanceToScene(global const uchar* voxels, global const TRenderOptions* opts,
                        const float3 rpos, const float3 dir, const int steps) {
   float4 res = distUnion((float4)(rpos.y + opts->groundY, 0.0, rpos.xz), (float4)(10000.0f, -1.0f, 0.0f, 0.0f));
   float idist = intersectsBox(opts->voxelBoundsMin, opts->voxelBoundsMax, rpos, dir);
@@ -160,7 +160,7 @@ float4 distanceToScene(global const float* voxels, global const TRenderOptions* 
   return res;
 }
 
-float3 sceneNormal(global const float* voxels, global const TRenderOptions* opts,
+float3 sceneNormal(global const uchar* voxels, global const TRenderOptions* opts,
                    const float3 p, const float3 dir) {
   const float f1 = distanceToScene(voxels, opts, p + opts->normOffsets[0].xyz, dir, opts->maxVoxelIter).x;
   const float f2 = distanceToScene(voxels, opts, p + opts->normOffsets[1].xyz, dir, opts->maxVoxelIter).x;
@@ -170,7 +170,7 @@ float3 sceneNormal(global const float* voxels, global const TRenderOptions* opts
                    opts->normOffsets[2].xyz * f3 + opts->normOffsets[3].xyz * f4);
 }
 
-void raymarch(global const float* voxels, global const TRenderOptions* opts,
+void raymarch(global const uchar* voxels, global const TRenderOptions* opts,
               const TRay* ray, TIsec* result, const float maxDist, const int maxSteps) {
   result->distance = opts->startDist;
   result->objectID = 0;
@@ -223,7 +223,7 @@ float3 applyAtmosphere(global const TRenderOptions* opts,
   return col;
 }
 
-float shadow(global const float* voxels, global const TRenderOptions* opts,
+float shadow(global const uchar* voxels, global const TRenderOptions* opts,
              const float3 p, const float3 ldir, const float ldist) {
   TRay shadowRay;
   shadowRay.pos = p;
@@ -255,7 +255,7 @@ float blinnPhongIntensity(const TMaterial mat, const TRay* ray,
   return 0.0f;
 }
 
-float ambientOcclusion(global const float* voxels, global const TRenderOptions* opts,
+float ambientOcclusion(global const uchar* voxels, global const TRenderOptions* opts,
                        const float3 pos, const float3 normal) {
   float ao = 1.0f;
   float d = 0.0f;
@@ -269,7 +269,7 @@ float ambientOcclusion(global const float* voxels, global const TRenderOptions* 
   return ao;
 }
 
-float3 objectLighting(global const float* voxels, global const TRenderOptions* opts,
+float3 objectLighting(global const uchar* voxels, global const TRenderOptions* opts,
                       const TRenderState* state, const TRay* ray, TIsec* isec,
                       const TMaterial mat, const float3 normal, const float3 reflectCol) {
   float ao = ambientOcclusion(voxels, opts, isec->pos, normal);
@@ -296,7 +296,7 @@ float3 objectLighting(global const float* voxels, global const TRenderOptions* o
   return col;
 }
 
-float3 basicSceneColor(global const float* voxels, global const TRenderOptions* opts,
+float3 basicSceneColor(global const uchar* voxels, global const TRenderOptions* opts,
                        const TRenderState* state, const TRay* ray) {
   TIsec isec;
   raymarch(voxels, opts, ray, &isec, opts->maxDist, opts->maxIter);
@@ -316,7 +316,7 @@ float3 basicSceneColor(global const float* voxels, global const TRenderOptions* 
   return applyAtmosphere(opts, state, ray, &isec, sceneCol);
 }
 
-float3 sceneColor(global const float* voxels, global const TRenderOptions* opts,
+float3 sceneColor(global const uchar* voxels, global const TRenderOptions* opts,
                   const TRenderState* state, const TRay* ray) {
   TIsec isec;
   raymarch(voxels, opts, ray, &isec, opts->maxDist, opts->maxIter);
@@ -371,7 +371,7 @@ TRenderState initRenderState(global const TRenderOptions* opts, const int id) {
   return state;
 }
 
-__kernel void RenderImage(global const float* voxels,
+__kernel void RenderImage(global const uchar* voxels,
                           global const TRenderOptions* opts,
                           global float4* pixels,
                           const int n) {

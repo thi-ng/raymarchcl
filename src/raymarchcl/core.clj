@@ -33,11 +33,11 @@
 
 (def material-presets
   {:orange-stripes
-   {:lightColor [56 36 16]
+   {:lightColor [56 56 56]
     :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
                 {:albedo [4.9 0.9 0.01 1.0] :r0 0.1 :smoothness 0.8}
                 {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
-                {:albedo [0.01 0.01 0.01 1.0] :r0 0.1 :smoothness 0.4}]
+                {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
     :aoAmp 0.2}
    :ao
    {:lightColor [50 50 50]
@@ -50,7 +50,7 @@
 (defn render-options
   [{:keys [width height vres t iter eyepos mat]}]
   (let [eps 0.005
-        d (* eps 1.6666)
+        d (* eps 1.75)
         clip 0.99]
     (merge
      {:resolution [width height]
@@ -66,15 +66,15 @@
       :maxVoxelIter 128
       :lightPos [2 3.0 2]
       :shadowBias 0.1
-      :aoAmp 0.05
+      :aoAmp 0.1
       :voxelBoundsMin [(- clip) (- clip) (- clip)]
-      :aoStepDist 0.05
+      :aoStepDist 0.025
       :eyePos (or eyepos [2 0 2])
-      :aoIter 10
+      :aoIter 20
       :voxelSize 0.05
       :normOffsets [[d (- d) (- d) 0] [(- d) (- d) d 0] [(- d) d (- d) 0] [d d d 0]]
       :frameBlend (max 0.01 (/ 1.0 iter))
-      :groundY 1.02
+      :groundY 1.1
       :shadowIter 128
       :lightColor [50 50 50]
       :targetPos [0 0 0]
@@ -106,15 +106,25 @@
 (defn make-volume
   [{[rx ry rz] :vres}]
   (prn "volume " rx ry rz)
-  (let [voxels (apply vector-of :float
-                      (for [z (range rz) y (range ry) x (range rx)]
-                        (if (< (bit-and z 0x1f) 16)
-                          0.0
-                          (let [v (gyroid 0.02625 1.0 [x y z] [0.3875 0.0 0.0])]
-                            (if (< (Math/abs (- 0.2 v)) 0.05)
-                              (if (< (bit-and x 0x1f) 16) 0.25 0.5)
-                              (if (> v 0.35) 1.0 0.0))))))]
+  (let [voxels (apply vector-of :byte
+                (for [z (range rz) y (range ry) x (range rx)]
+                  (if (< (bit-and z 0x1f) 16)
+                    0.0
+                    (let [v (gyroid 0.02 1.0 [x y z] [0.3875 0.0 0.0])]
+                      (if (< (Math/abs (- 0.2 v)) 0.05)
+                        (if (< (bit-and x 0x1f) 16) (byte 64) (byte 127))
+                        (if (> v 0.35) (unchecked-byte 255) (byte 0)))))))]
     voxels))
+
+(defn save-volume
+  [path res voxels]
+  (with-open [out (java.io.DataOutputStream. (io/output-stream path))]
+    (.write out (byte-array (map byte [86 79 88 69 76])) 0 5) ; magic: VOXEL
+    (.writeInt out res) ; resx
+    (.writeInt out res) ; resy
+    (.writeInt out res) ; resz
+    (.writeByte out 1)     ; element size in bytes
+    (.write out (byte-array (map unchecked-byte voxels)) 0 (count voxels))))
 
 (defn load-volume
   [path]
@@ -128,7 +138,7 @@
           _ (.read in vox 0 (count vox))
           {:keys [v-buf]} (ops/init-buffers
                            1 1
-                           :v-buf {:wrap (map #(if (zero? %) 0.0 0.5) vox) :type :float :usage :readonly})]
+                           :v-buf {:wrap vox :type :byte :usage :readonly})]
       (cl/rewind v-buf))))
 
 (defn make-pipeline
@@ -190,10 +200,11 @@
                      :num num}
                     (ops/init-buffers
                      1 1
-                     ;;:v-buf {:wrap (make-volume args) :type :float :usage :readonly}
+                     :v-buf {:wrap (make-volume args) :type :byte :usage :readonly}
                      :p-buf {:size (* num 4) :type :float :usage :readwrite}
                      :q-buf {:size num :type :int :usage :writeonly})
-                    {:v-buf (load-volume "../toxi2/voxel-d7.vox")}
+                    ;; {:v-buf (load-volume "../toxi2/voxel-d7.vox")}
+                    ;;{:v-buf (load-volume "gyroid-sliced-256-s0.02.vox")}
                     ))]
         (assoc state :pipeline (make-pipeline state))))))
 
@@ -202,7 +213,7 @@
   (let [state (init-renderer {:width width :height height
                               :vres [res res res]
                               :iter iter
-                              :eyepos (compute-eyepos 45 1.0 0.25)
+                              :eyepos (compute-eyepos 135 2.25 0.25)
                               :mat mat})]
     (cl/with-state (:cl-state state)
       (let [argb (time (ops/execute-pipeline (:pipeline state) :verbose false :final-size (:num state)))
