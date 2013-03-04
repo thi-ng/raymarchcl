@@ -68,6 +68,8 @@ typedef struct {
   float4 mcSamples[16384];
 } TRenderOptions;
 
+__constant float INV8BIT = 1.0f / 255.0f;
+
 float4 randFloat4(global const TRenderOptions* opts, uint seed) {
   return opts->mcSamples[seed & 0x3fff];
 }
@@ -101,13 +103,13 @@ float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const 
 
 float voxelDataAt(global const uchar* voxels, const int3 res, const int3 p) {
   if (p.x >= 0 && p.x < res.x && p.y >= 0 && p.y < res.y && p.z >= 0 && p.z < res.z) {
-    return (float)(voxels[p.z * res.x * res.y + p.y * res.x + p.x]) / 255.0;
+    return (float)(voxels[p.z * res.x * res.y + p.y * res.x + p.x]) * INV8BIT;
   }
   return 0.0f;
 }
 
 float voxelLookup(global const uchar* voxels, global const TRenderOptions* opts, const float3 p) {
-  int3 pv = (int3)(p.x * opts->voxelRes.x, p.y * opts->voxelRes.y, p.z * opts->voxelRes.z);
+  const int3 pv = (int3)(p.x * opts->voxelRes.x, p.y * opts->voxelRes.y, p.z * opts->voxelRes.z);
   return voxelDataAt(voxels, opts->voxelRes, pv);
 }
 /*
@@ -135,6 +137,7 @@ float voxelLookup(global const uchar* voxels, global const TRenderOptions* opts,
   return 0.0f;
 }
 */
+
 float voxelMaterial(global const TRenderOptions* opts, float v) {
   return (v < 0.66 ? (v < 0.33 ? 1.0f : 2.0f) : 3.0f);
 }
@@ -262,8 +265,8 @@ float ambientOcclusion(global const uchar* voxels, global const TRenderOptions* 
   uint seed = (uint)(pos.x * 3183.75f + pos.y * 1831.42f + pos.z * 2945.87f + opts->time * 2671.918f);
   for(int i = 0; i <= opts->aoIter && ao > 0.01; i++) {
     d += opts->aoStepDist;
-    float3 n = normalize(normal + 0.2f * randFloat4(opts, seed + i * 37).xyz);
-    float4 sceneDist = distanceToScene(voxels, opts, pos + n * d, n, opts->maxIter);
+    const float3 n = normalize(normal + 0.2f * randFloat4(opts, seed + i * 37).xyz);
+    const float4 sceneDist = distanceToScene(voxels, opts, pos + n * d, n, opts->maxIter);
     ao *= 1.0f - max(0.0f, (d - sceneDist.x) * opts->aoAmp / d );
   }
   return ao;
