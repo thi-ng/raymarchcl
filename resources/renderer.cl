@@ -269,8 +269,8 @@ float ambientOcclusion(global const uchar* voxels, global const TRenderOptions* 
   for(int i = 0; i <= opts->aoIter && ao > 0.01; i++) {
     d += opts->aoStepDist;
     const float3 n = normalize(normal + 0.2f * randFloat4(opts, seed + i * 37).xyz);
-    const float4 sceneDist = distanceToScene(voxels, opts, pos + n * d, n, opts->maxIter);
-    ao *= 1.0f - max(0.0f, (d - sceneDist.x) * opts->aoAmp / d );
+    const float4 sceneDist = distanceToScene(voxels, opts, pos + n * d, n, opts->maxVoxelIter);
+    ao *= 1.0f - clamp((d - sceneDist.x) * opts->aoAmp / d, 0.0f, 0.1f);
   }
   return ao;
 }
