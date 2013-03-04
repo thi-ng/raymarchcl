@@ -33,14 +33,16 @@
 
 (def material-presets
   {:orange-stripes
-   {:lightColor [56 36 16]
+   {:lightColor [[56 36 16 0] [16 36 56 0]]
+    :numLights 2
     :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
                 {:albedo [4.9 0.9 0.01 1.0] :r0 0.1 :smoothness 0.8}
                 {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
     :aoAmp 0.2}
    :ao
-   {:lightColor [50 50 50]
+   {:lightColor [[50 50 50 0]]
+    :numLights 1
     :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.0 :smoothness 1.0}
                 {:albedo [1.0 1.0 1.0 1.0] :r0 0.0 :smoothness 1.0}
                 {:albedo [1.0 1.0 1.0 1.0] :r0 0.0 :smoothness 1.0}
@@ -54,7 +56,7 @@
         clip 0.99]
     (merge
      {:resolution [width height]
-      :flareAmp 0.05
+      :flareAmp 0.025
       :maxDist 30
       :invAspect (float (/ height width))
       :eps eps
@@ -64,11 +66,13 @@
       :isoVal 32
       :voxelRes vres
       :maxVoxelIter 128
-      :lightPos [-2 0 -2]
+      :lightPos [[-2 0 -2 0] [2 0 2 0]]
+      :numLights 2
       :shadowBias 0.1
-      :aoAmp 0.15
+      :aoAmp 0.1
+      :aoMaxAmp 0.1875
       :voxelBoundsMin [(- clip) (- clip) (- clip)]
-      :aoStepDist 0.025
+      :aoStepDist 0.05
       :eyePos (or eyepos [2 0 2])
       :aoIter 20
       :voxelSize 0.05
@@ -203,7 +207,7 @@
                      ;;:v-buf {:wrap (make-volume args) :type :byte :usage :readonly}
                      :p-buf {:size (* num 4) :type :float :usage :readwrite}
                      :q-buf {:size num :type :int :usage :writeonly})
-                    ;; {:v-buf (load-volume "../toxi2/voxel-d7.vox")}
+                    ;;{:v-buf (load-volume "../toxi2/voxel-d7.vox")}
                     {:v-buf (load-volume "gyroid-sliced-256-s0.02.vox")}
                     ))]
         (assoc state :pipeline (make-pipeline state))))))
@@ -213,7 +217,7 @@
   (let [state (init-renderer {:width width :height height
                               :vres [res res res]
                               :iter iter
-                              :eyepos (compute-eyepos (* 3 45) 2.25 0.25)
+                              :eyepos (compute-eyepos (* 1.7 45) 0.66 0.25)
                               :mat mat})]
     (cl/with-state (:cl-state state)
       (let [argb (time (ops/execute-pipeline (:pipeline state) :verbose false :final-size (:num state)))
