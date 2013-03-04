@@ -77,7 +77,7 @@
       :aoIter 20
       :voxelSize 0.05
       :normOffsets [[d (- d) (- d) 0] [(- d) (- d) d 0] [(- d) d (- d) 0] [d d d 0]]
-      :frameBlend (max 0.01 (/ 1.0 iter))
+      :frameBlend (/ 1.0 iter)
       :groundY 1.1
       :shadowIter 32
       :lightColor [50 50 50]

@@ -392,7 +392,7 @@ __kernel void RenderImage(global const uchar* voxels,
     TRenderState state = initRenderState(opts, id);
     TRay ray = cameraRayLookat(opts, &state);
     float3 sceneCol = sceneColor(voxels, opts, &state, &ray) * opts->exposure;
-    float3 prevCol = pixels[id].xyz;
+    float3 prevCol = pixels[id].xyz + (state.mcPos.xyz - 0.4f) * INV8BIT;
     pixels[id] = (float4)(prevCol + (sceneCol - prevCol) * opts->frameBlend, 1.0f);
   }
 }
