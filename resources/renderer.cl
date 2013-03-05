@@ -18,6 +18,12 @@ typedef struct {
 } TMaterial;
 
 typedef struct {
+  float4 vertices[4];
+  float4 normal;
+  float4 color;
+} TAreaLight;
+
+typedef struct {
   float3 eyePos;
   float4 mcPos;
   float3 mcNormal;
@@ -40,6 +46,7 @@ typedef struct {
   int2 resolution;
   float invAspect;
   float time;
+  float fov;
   int maxIter;
   int maxVoxelIter;
   float maxDist;
@@ -90,6 +97,18 @@ float trilinear(float n000, float n001, float n010, float n011,
   return mix(mix(nx, nz, fy), mix(ny, nw, fy), fz);
 }
 
+float3 barycentricPointInTriangle(const float3 a, const float3 b, const float3 c, const float3 p) {
+  return a * p.x + b * p.y + c * p.z;
+}
+
+float3 randomPointInTriangle(const float3 a, const float3 b, const float3 c, float4 r) {
+  r = fabs(r);
+  float my = 1.0f - r.x;
+  while(r.y > my) r.y *= 0.7317f;
+  r.z = 1.0f - (r.x + r.y);
+  return barycentricPointInTriangle(a, b, c, r.xyz);
+}
+
 /**
  * @returns distance to box or -1 if no isec
  */
@@ -101,6 +120,25 @@ float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const 
   m = max(omax, omin);
   float b = min(m.x, min(m.y, m.z));
   return b > a ? a : -1.0f;
+}
+
+bool triangleContainsPoint(const float3 a, const float3 b, const float3 c,
+                            const float3 p) {
+  return false; // TODO
+}
+
+float intersectsTriangle(const float3 a, const float3 b, const float3 c,
+                         const float3 p, const float3 dir) {
+  float3 n = normalize(cross(b - a, c - a));
+  float nd = dot(n, dir);
+  float t = -dot(n, p - a) / nd;
+  if (t >= 1e-3f) {
+    float3 ip = p + dir * t;
+    if (triangleContainsPoint(a, b, c, ip)) {
+      return t;
+    }
+  }
+  return -1.0f;
 }
 
 uchar voxelDataAt(global const uchar* voxels, const int3 res, const int3 p) {
@@ -365,7 +403,7 @@ float3 tonemap(const float3 col, const float g) {
 TRay cameraRayLookat(global const TRenderOptions* opts, const TRenderState* state) {
   float3 forward = normalize(opts->targetPos - state->eyePos);
   float3 right = normalize(cross(forward, opts->up));
-  float2 viewCoord = state->pixelPos / (float2)(opts->resolution.x, opts->resolution.y) * 2.0f - 1.0f;
+  float2 viewCoord = state->pixelPos / (float2)(opts->resolution.x, opts->resolution.y) * opts->fov - opts->fov * 0.5f;
   viewCoord.y *= -opts->invAspect;
   TRay ray;
   ray.pos = state->eyePos;
