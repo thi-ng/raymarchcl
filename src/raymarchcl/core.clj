@@ -40,7 +40,8 @@
                 {:albedo [4.9 0.9 0.01 1.0] :r0 0.1 :smoothness 0.8}
                 {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
-    :aoAmp 0.15}
+    :aoAmp 0.1875
+    :reflectIter 3}
    :metal
    {:lightColor [[56 36 16 0] [16 36 56 0]]
     :numLights 1
@@ -48,7 +49,8 @@
                 {:albedo [0.0 0.01 0.05 1.0] :r0 0.2 :smoothness 0.8}
                 {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
-    :aoAmp 0.175}
+    :aoAmp 0.1875
+    :reflectIter 3}
    :ao
    {:lightColor [[50 50 50 0]]
     :numLights 1
@@ -56,7 +58,8 @@
                 {:albedo [1.0 1.0 1.0 1.0] :r0 0.0 :smoothness 1.0}
                 {:albedo [1.0 1.0 1.0 1.0] :r0 0.0 :smoothness 1.0}
                 {:albedo [1.0 1.0 1.0 1.0] :r0 0.0 :smoothness 1.0}]
-    :aoAmp 0.25}})
+    :aoAmp 0.25
+    :reflectIter 0}})
 
 (defn render-options
   [{:keys [width height vres t iter eyepos mat]}]
@@ -93,6 +96,7 @@
       :lightColor [50 50 50]
       :targetPos [-0.75 0 0.75]
       :maxIter 80
+      :reflectIter 0
       :dof 0.01
       :exposure 3.5
       :minLightAtt 0.0
@@ -240,7 +244,7 @@
                     ;;{:v-buf (load-volume "../toxi2/voxel-d7.vox")}
                     ;;{:v-buf (load-volume "gyroid-sliced-256-s0.02.vox")}
                     ;;{:v-buf (load-volume "gyroid-sliced-512-s0.01.vox")}
-                    {:v-buf (load-volume "terrain-512-r11-pipes.vox")}
+                    {:v-buf (load-volume "terrain-512-solid.vox")}
                     ))]
         (assoc state :pipeline (make-pipeline state))))))
 
@@ -249,6 +253,7 @@
   (let [state (init-renderer {:width width :height height
                               :vres [res res res]
                               :iter iter
+                              ;;:eyepos (compute-eyepos (* 3 45) 2.25 0.25)
                               :eyepos (compute-eyepos (* 3 45) 2.5 1)
                               :mat mat})]
     (cl/with-state (:cl-state state)
@@ -264,19 +269,17 @@
         (pix/save-png img "foo.png")))))
 
 (defn test-anim
-  [width height iter res]
-  (let [args {:width width :height height :vres [res res res] :iter iter}
+  [width height iter res mat]
+  (let [args {:width width :height height :vres [res res res] :iter iter :mat mat}
         img (pix/make-image width height)
         img-pix (pix/get-pixels img)
         state (init-renderer args)]
     (cl/with-state (:cl-state state)
       (time
-       (doseq [frame (range 120)]
+       (doseq [frame (range 32)]
          (prn "rendering frame #" frame)
          (cl/rewind (:q-buf state))
-         (let [theta (float (/ (* frame 3 Math/PI) 180.0))
-               frame-args (assoc args
-                            :eyepos [(* 1.5 (Math/cos theta)) 0.15 (* 1.5 (Math/sin theta))])
+         (let [frame-args (assoc args :eyepos (compute-eyepos (* frame 12.125) 2.25 0.25))
                _ (update-option-buffers (:o-buffers state) frame-args)
                argb (time (ops/execute-pipeline
                            (make-pipeline state)
@@ -289,7 +292,7 @@
                (aset-int img-pix i (first cols))
                (recur (rest cols) (inc i))))
            (pix/set-pixels img img-pix)
-           (pix/save-png img (format "anim-%03d.png" frame)))))
+           (pix/save-png img (format "anim/foo-%03d.png" frame)))))
       (cl/release (:ctx (:cl-state state))))))
 
 (defn trilin
