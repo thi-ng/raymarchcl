@@ -6,7 +6,8 @@
    [structgen.core :as sg]
    [structgen.parser :as sp]
    [piksel.core :as pix]
-   [clojure.java.io :as io]))
+   [clojure.java.io :as io])
+  (:import [java.nio ByteBuffer]))
 
 (def cl-program
   "Location of the OpenCL program"
@@ -39,7 +40,15 @@
                 {:albedo [4.9 0.9 0.01 1.0] :r0 0.1 :smoothness 0.8}
                 {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
-    :aoAmp 0.2}
+    :aoAmp 0.15}
+   :metal
+   {:lightColor [[56 36 16 0] [16 36 56 0]]
+    :numLights 1
+    :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
+                {:albedo [0.0 0.01 0.05 1.0] :r0 0.2 :smoothness 0.8}
+                {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
+                {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
+    :aoAmp 0.175}
    :ao
    {:lightColor [[50 50 50 0]]
     :numLights 1
@@ -56,7 +65,8 @@
         clip 0.99]
     (merge
      {:resolution [width height]
-      :flareAmp 0.025
+      :fov 2
+      :flareAmp 0.015
       :maxDist 30
       :invAspect (float (/ height width))
       :eps eps
@@ -65,8 +75,8 @@
       :startDist 0.0
       :isoVal 32
       :voxelRes vres
-      :maxVoxelIter 128
-      :lightPos [[-2 0 -2 0] [2 0 2 0]]
+      :maxVoxelIter 192
+      :lightPos [[0 2 0 0] [2 0 2 0]]
       :numLights 2
       :shadowBias 0.1
       :aoAmp 0.1
@@ -81,8 +91,8 @@
       :groundY 1.1
       :shadowIter 32
       :lightColor [50 50 50]
-      :targetPos [0 0 0]
-      :maxIter 64
+      :targetPos [-0.75 0 0.75]
+      :maxIter 80
       :dof 0.01
       :exposure 3.5
       :minLightAtt 0.0
@@ -110,25 +120,45 @@
 (defn make-volume
   [{[rx ry rz] :vres}]
   (prn "volume " rx ry rz)
-  (let [voxels (apply vector-of :byte
+  (let [voxels (apply
+                byte-array
                 (for [z (range rz) y (range ry) x (range rx)]
-                  (if (< (bit-and z 0x1f) 16)
+                  (if (< (bit-and z 0x3f) 32)
                     0.0
-                    (let [v (gyroid 0.02 1.0 [x y z] [0.3875 0.0 0.0])]
+                    (let [v (gyroid 0.01 1.0 [x y z] [0.3875 0.0 0.0])]
+                      (when (and (zero? x) (zero? y)) (prn z))
                       (if (< (Math/abs (- 0.2 v)) 0.05)
-                        (if (< (bit-and x 0x1f) 16) (byte 64) (byte 127))
+                        (if (< (bit-and x 0x3f) 32) (byte 64) (byte 127))
                         (if (> v 0.35) (unchecked-byte 255) (byte 0)))))))]
     voxels))
 
+(defn make-terrain
+  [{[rx ry rz] :vres}]
+  (prn "terrain " rx ry rz)
+  (let [voxels (byte-array (* rx ry rz))
+        rxy (* rx ry)]
+    (doseq [z (range 4) y (range (int (* ry 0.666))) x (range rx)]
+      (aset-byte voxels (+ (* z rxy) (* y rx) x) 64)
+      (aset-byte voxels (+ (* x rxy) (+ (* y rx) (- (- rx z) 1))) 64))
+    (doseq [z (range rz) x (range rx)]
+      (let [dx (- 16 (rem x 32))
+            dz (- 16 (rem z 32))
+            r (+ (* dx dx) (* dz dz))]
+        (when true ;(and (> r 36) (<= r 121))
+          (let [y (int (* ry (+ 0.25 (* 0.125 (* (Math/sin (* z 0.02)) (Math/cos (* x 0.03)))))))]
+            (doseq [yy (range (max (- y 6) 0) (inc y))]
+              (aset-byte voxels (+ (* z rxy) (+ (* yy rx) x)) -1))))))
+    voxels))
+
 (defn save-volume
-  [path res voxels]
+  [path res ^bytes voxels]
   (with-open [out (java.io.DataOutputStream. (io/output-stream path))]
     (.write out (byte-array (map byte [86 79 88 69 76])) 0 5) ; magic: VOXEL
     (.writeInt out res) ; resx
     (.writeInt out res) ; resy
     (.writeInt out res) ; resz
     (.writeByte out 1)     ; element size in bytes
-    (.write out (byte-array (map unchecked-byte voxels)) 0 (count voxels))))
+    (.write out voxels 0 (count voxels))))
 
 (defn load-volume
   [path]
@@ -142,12 +172,11 @@
           _ (.read in vox 0 (count vox))
           {:keys [v-buf]} (ops/init-buffers
                            1 1
-                           :v-buf {:wrap vox :type :byte :usage :readonly})]
+                           :v-buf {:wrap (ByteBuffer/wrap vox) :usage :readonly})]
       (cl/rewind v-buf))))
 
 (defn make-pipeline
   [{:keys [o-buffers v-buf p-buf q-buf num] :as args}]
-  (prn args)
   (ops/compile-pipeline
    :steps
    (concat
@@ -205,10 +234,13 @@
                     (ops/init-buffers
                      1 1
                      ;;:v-buf {:wrap (make-volume args) :type :byte :usage :readonly}
+                     ;;:v-buf {:wrap (make-terrain args) :type :byte :usage :readonly}
                      :p-buf {:size (* num 4) :type :float :usage :readwrite}
                      :q-buf {:size num :type :int :usage :writeonly})
                     ;;{:v-buf (load-volume "../toxi2/voxel-d7.vox")}
-                    {:v-buf (load-volume "gyroid-sliced-256-s0.02.vox")}
+                    ;;{:v-buf (load-volume "gyroid-sliced-256-s0.02.vox")}
+                    ;;{:v-buf (load-volume "gyroid-sliced-512-s0.01.vox")}
+                    {:v-buf (load-volume "terrain-512-r11-pipes.vox")}
                     ))]
         (assoc state :pipeline (make-pipeline state))))))
 
@@ -217,7 +249,7 @@
   (let [state (init-renderer {:width width :height height
                               :vres [res res res]
                               :iter iter
-                              :eyepos (compute-eyepos (* 1.7 45) 0.66 0.25)
+                              :eyepos (compute-eyepos (* 3 45) 2.5 1)
                               :mat mat})]
     (cl/with-state (:cl-state state)
       (let [argb (time (ops/execute-pipeline (:pipeline state) :verbose false :final-size (:num state)))
