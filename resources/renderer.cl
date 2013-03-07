@@ -5,6 +5,7 @@ typedef struct {
 
 typedef struct {
   float3 pos;
+  float3 normal;
   float distance;
   int objectID;
   int iter;
@@ -59,6 +60,7 @@ typedef struct {
   float voxelSize;
   float groundY;
   int shadowIter;
+  int reflectIter;
   float shadowBias;
   float lightScatter;
   float minLightAtt;
@@ -321,7 +323,7 @@ float3 objectLighting(global const uchar* voxels, global const TRenderOptions* o
   float ao = ambientOcclusion(voxels, opts, isec->pos, normal);
   float3 diffReflect = skyGradient(opts, normal) * ao;
   float3 specReflect = reflectCol * ao;
-  float3 finalCol;
+  float3 finalCol=(float3)(0.0f);
   for(uchar i=0; i < opts->numLights; i++) {
     // point light
     float3 deltaLight = lightPos(opts, state, i) - isec->pos;
@@ -339,31 +341,27 @@ float3 objectLighting(global const uchar* voxels, global const TRenderOptions* o
     // specular
     float spec = schlick(mat, normal, ray->dir);
     float3 col = diffReflect + (specReflect - diffReflect) * spec;
-    if (i == 0) {
-      finalCol = col;
-    } else {
-      finalCol = (finalCol + col) * 0.5f;
-    }
+    finalCol += col;
   }
-  return finalCol;
+  return finalCol / (float)(opts->numLights);
 }
 
 float3 basicSceneColor(global const uchar* voxels, global const TRenderOptions* opts,
-                       const TRenderState* state, const TRay* ray) {
-  TIsec isec;
-  raymarch(voxels, opts, ray, &isec, opts->maxDist, opts->maxIter);
+                       const TRenderState* state, const TRay* ray, TIsec* isec) {
+  //TIsec isec;
+  raymarch(voxels, opts, ray, isec, opts->maxDist, opts->maxIter);
 
   float3 sceneCol;
 
-  if(isec.objectID < 0) {
+  if(isec->objectID < 0) {
     sceneCol = skyGradient(opts, ray->dir);
   } else {
-    const TMaterial mat = objectMaterial(opts, isec.objectID);
-    float3 norm = sceneNormal(voxels, opts, isec.pos, ray->dir);
-    float3 reflectCol = skyGradient(opts, reflect(ray->dir, norm));
-    sceneCol = objectLighting(voxels, opts, state, ray, &isec, mat, norm, reflectCol);
+    const TMaterial mat = objectMaterial(opts, isec->objectID);
+    isec->normal = sceneNormal(voxels, opts, isec->pos, ray->dir);
+    float3 reflectCol = skyGradient(opts, reflect(ray->dir, isec->normal));
+    sceneCol = objectLighting(voxels, opts, state, ray, isec, mat, isec->normal, reflectCol);
   }
-  return applyAtmosphere(opts, state, ray, &isec, sceneCol);
+  return applyAtmosphere(opts, state, ray, isec, sceneCol);
 }
 
 float3 sceneColor(global const uchar* voxels, global const TRenderOptions* opts,
@@ -371,18 +369,26 @@ float3 sceneColor(global const uchar* voxels, global const TRenderOptions* opts,
   TIsec isec;
   raymarch(voxels, opts, ray, &isec, opts->maxDist, opts->maxIter);
   float3 sceneCol;
-  if(isec.objectID < 0) {
+  if(isec.distance > opts->maxDist * 0.5f) {
     sceneCol = skyGradient(opts, ray->dir);
   } else {
     const TMaterial mat = objectMaterial(opts, isec.objectID);
     float3 norm = sceneNormal(voxels, opts, isec.pos, ray->dir);
     norm = normalize(norm + state->mcNormal / (5.0f + mat.smoothness * 200.0f));
-    float3 reflectCol;
-    if (mat.r0 > 0.0) {
+    float3 reflectCol = (float3)(1.0f);
+    if (mat.r0 > 0.0 && opts->reflectIter > 0) {
+      TIsec rIsec;
+      rIsec.pos = isec.pos;
+      rIsec.normal = norm;
       TRay reflectRay;
-      reflectRay.dir = reflect(ray->dir, norm);
-      reflectRay.pos = isec.pos + reflectRay.dir * 0.00875f; // TODO opts->reflectSeperation
-      reflectCol = basicSceneColor(voxels, opts, state, &reflectRay);
+      reflectRay.dir = ray->dir;
+      for(int i = 0; i < opts->reflectIter; i++) {
+        reflectRay.dir = reflect(reflectRay.dir, rIsec.normal);
+        reflectRay.pos = rIsec.pos + reflectRay.dir * 0.0075f;
+        reflectCol *= basicSceneColor(voxels, opts, state, &reflectRay, &rIsec);
+        if (rIsec.objectID < 0) break;
+        if (objectMaterial(opts, rIsec.objectID).r0 < 0.001) break;
+      }
     } else {
       reflectCol = skyGradient(opts, reflect(ray->dir, norm));
     }
@@ -429,8 +435,8 @@ __kernel void RenderImage(global const uchar* voxels,
   if (id < n) {
     TRenderState state = initRenderState(opts, id);
     TRay ray = cameraRayLookat(opts, &state);
-    float3 sceneCol = sceneColor(voxels, opts, &state, &ray) * opts->exposure;
-    float3 prevCol = pixels[id].xyz + (state.mcPos.xyz - 0.4f) * INV8BIT;
+    const float3 sceneCol = sceneColor(voxels, opts, &state, &ray) * opts->exposure;
+    const float3 prevCol = pixels[id].xyz;
     pixels[id] = (float4)(prevCol + (sceneCol - prevCol) * opts->frameBlend, 1.0f);
   }
 }
