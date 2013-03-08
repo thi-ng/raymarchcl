@@ -34,21 +34,21 @@
 
 (def material-presets
   {:orange-stripes
-   {:lightColor [[56 36 16 0] [16 36 56 0]]
+   {:lightColor [[28 18 8 0] [8 18 28 0]]
     :numLights 2
     :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
-                {:albedo [4.9 0.9 0.01 1.0] :r0 0.1 :smoothness 0.8}
+                {:albedo [4.9 0.9 0.05 1.0] :r0 0.1 :smoothness 0.8}
                 {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
     :aoAmp 0.1875
     :reflectIter 3}
    :metal
-   {:lightColor [[56 36 16 0] [16 36 56 0]]
+   {:lightColor [[28 18 8 0]]
     :numLights 1
     :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
-                {:albedo [0.0 0.01 0.05 1.0] :r0 0.2 :smoothness 0.8}
+                {:albedo [0.0 0.01 0.05 1.0] :r0 0.2 :smoothness 0.7}
                 {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
-                {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
+                {:albedo [0.9 0.9 0.9 1.0] :r0 0.75 :smoothness 0.2}]
     :aoAmp 0.1875
     :reflectIter 3}
    :ao
@@ -64,7 +64,7 @@
 (defn render-options
   [{:keys [width height vres t iter eyepos mat]}]
   (let [eps 0.005
-        d (* eps 1.75)
+        d (* eps 1.05)
         clip 0.99]
     (merge
      {:resolution [width height]
@@ -79,7 +79,7 @@
       :isoVal 32
       :voxelRes vres
       :maxVoxelIter 192
-      :lightPos [[0 2 0 0] [2 0 2 0]]
+      :lightPos [[-2 0 -2 0] [2 0 2 0]]
       :numLights 2
       :shadowBias 0.1
       :aoAmp 0.1
@@ -94,7 +94,7 @@
       :groundY 1.1
       :shadowIter 32
       :lightColor [50 50 50]
-      :targetPos [-0.75 0 0.75]
+      :targetPos [0 -0.4 0]
       :maxIter 80
       :reflectIter 0
       :dof 0.01
@@ -124,16 +124,16 @@
 (defn make-volume
   [{[rx ry rz] :vres}]
   (prn "volume " rx ry rz)
-  (let [voxels (apply
-                byte-array
-                (for [z (range rz) y (range ry) x (range rx)]
-                  (if (< (bit-and z 0x3f) 32)
-                    0.0
-                    (let [v (gyroid 0.01 1.0 [x y z] [0.3875 0.0 0.0])]
-                      (when (and (zero? x) (zero? y)) (prn z))
-                      (if (< (Math/abs (- 0.2 v)) 0.05)
-                        (if (< (bit-and x 0x3f) 32) (byte 64) (byte 127))
-                        (if (> v 0.35) (unchecked-byte 255) (byte 0)))))))]
+  (let [voxels (byte-array (* rx ry rz))
+        rxy (* rx ry)]
+    (doseq [z (range rz) y (range ry) x (range rx)]
+      (when (>= (bit-and z 0x3f) 32)
+        (let [v (gyroid 0.01 1.0 [x y z] [0.3875 0.0 0.0])
+	      idx (+ (+ (* z rxy) (* y rx)) x)]
+          (when (and (zero? x) (zero? y)) (prn z))
+            (if (< (Math/abs (- 0.2 v)) 0.05)
+              (if (< (bit-and x 0x3f) 32) (aset-byte voxels idx 64) (aset-byte voxels idx 127))
+              (when (> v 0.35) (aset-byte voxels idx -1))))))
     voxels))
 
 (defn make-terrain
@@ -148,9 +148,9 @@
       (let [dx (- 16 (rem x 32))
             dz (- 16 (rem z 32))
             r (+ (* dx dx) (* dz dz))]
-        (when true ;(and (> r 36) (<= r 121))
+        (when (<= r 121)
           (let [y (int (* ry (+ 0.25 (* 0.125 (* (Math/sin (* z 0.02)) (Math/cos (* x 0.03)))))))]
-            (doseq [yy (range (max (- y 6) 0) (inc y))]
+            (doseq [yy (range (inc y))]
               (aset-byte voxels (+ (* z rxy) (+ (* yy rx) x)) -1))))))
     voxels))
 
@@ -241,10 +241,10 @@
                      ;;:v-buf {:wrap (make-terrain args) :type :byte :usage :readonly}
                      :p-buf {:size (* num 4) :type :float :usage :readwrite}
                      :q-buf {:size num :type :int :usage :writeonly})
-                    ;;{:v-buf (load-volume "../toxi2/voxel-d7.vox")}
+                    {:v-buf (load-volume "gyroid-512.vox")}
                     ;;{:v-buf (load-volume "gyroid-sliced-256-s0.02.vox")}
                     ;;{:v-buf (load-volume "gyroid-sliced-512-s0.01.vox")}
-                    {:v-buf (load-volume "terrain-512-solid.vox")}
+                    ;;{:v-buf (load-volume "terrain-512-solid.vox")}
                     ))]
         (assoc state :pipeline (make-pipeline state))))))
 
@@ -253,8 +253,8 @@
   (let [state (init-renderer {:width width :height height
                               :vres [res res res]
                               :iter iter
-                              ;;:eyepos (compute-eyepos (* 3 45) 2.25 0.25)
-                              :eyepos (compute-eyepos (* 3 45) 2.5 1)
+                              :eyepos (compute-eyepos (* 3 45) 2.25 0.5)
+                              ;;:eyepos (compute-eyepos (* 3 45) 2.5 1)
                               :mat mat})]
     (cl/with-state (:cl-state state)
       (let [argb (time (ops/execute-pipeline (:pipeline state) :verbose false :final-size (:num state)))
