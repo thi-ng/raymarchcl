@@ -94,7 +94,7 @@
       :groundY 1.1
       :shadowIter 32
       :lightColor [50 50 50]
-      :targetPos [0 -0.4 0]
+      :targetPos [0 -0.124 0]
       :maxIter 80
       :reflectIter 0
       :dof 0.01
@@ -241,9 +241,9 @@
                      ;;:v-buf {:wrap (make-terrain args) :type :byte :usage :readonly}
                      :p-buf {:size (* num 4) :type :float :usage :readwrite}
                      :q-buf {:size num :type :int :usage :writeonly})
-                    {:v-buf (load-volume "gyroid-512.vox")}
+                    ;;{:v-buf (load-volume "gyroid-512.vox")}
                     ;;{:v-buf (load-volume "gyroid-sliced-256-s0.02.vox")}
-                    ;;{:v-buf (load-volume "gyroid-sliced-512-s0.01.vox")}
+                    {:v-buf (load-volume "gyroid-sliced-512-s0.01.vox")}
                     ;;{:v-buf (load-volume "terrain-512-solid.vox")}
                     ))]
         (assoc state :pipeline (make-pipeline state))))))
@@ -253,7 +253,7 @@
   (let [state (init-renderer {:width width :height height
                               :vres [res res res]
                               :iter iter
-                              :eyepos (compute-eyepos (* 3 45) 2.25 0.5)
+                              :eyepos (compute-eyepos (* 1.7 45) 0.66 0.5)
                               ;;:eyepos (compute-eyepos (* 3 45) 2.5 1)
                               :mat mat})]
     (cl/with-state (:cl-state state)
