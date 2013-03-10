@@ -7,7 +7,8 @@
    [structgen.parser :as sp]
    [piksel.core :as pix]
    [clojure.java.io :as io])
-  (:import [java.nio ByteBuffer]))
+  (:import
+   [java.nio ByteBuffer IntBuffer]))
 
 (def cl-program
   "Location of the OpenCL program"
@@ -21,7 +22,7 @@
   [num]
   (let [rnd (java.util.Random. (System/nanoTime))
         rv #(float (- (* 2.0 (.nextDouble rnd)) 1.0))]
-    (vec
+    (flatten
      (for [i (range num)
            :let [x (rv) y (rv) z (rv) w (rv)
                  m (/ 1.0 (Math/sqrt (+ (* x x) (* y y) (* z z) (* w w))))]]
@@ -35,6 +36,7 @@
 (def material-presets
   {:orange-stripes
    {:lightColor [[28 18 8 0] [8 18 28 0]]
+    :lightPos [[-2 0 -2 0] [2 0 2 0]]
     :numLights 2
     :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
                 {:albedo [4.9 0.9 0.05 1.0] :r0 0.1 :smoothness 0.8}
@@ -44,10 +46,11 @@
     :reflectIter 3}
    :metal
    {:lightColor [[28 18 8 0]]
+    :lightPos [[0 2 0 0]]
     :numLights 1
     :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
-                {:albedo [0.0 0.01 0.05 1.0] :r0 0.2 :smoothness 0.7}
-                {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
+                {:albedo [0.0 0.01 0.075 1.0] :r0 0.2 :smoothness 0.7}
+                {:albedo [1.9 1.9 1.9 1.0] :r0 0.4 :smoothness 0.5}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.75 :smoothness 0.2}]
     :aoAmp 0.1875
     :reflectIter 3}
@@ -69,25 +72,27 @@
     (merge
      {:resolution [width height]
       :fov 2
-      :flareAmp 0.015
-      :maxDist 30
+      :flareAmp 0.02
+      :maxDist 10
       :invAspect (float (/ height width))
       :eps eps
-      :skyColor1 [0.5 1.5 3.0]
-      :skyColor2 [1.8 1.8 1.8]
+      ;;:skyColor1 [1.0 1.0 1.0]
+      ;;:skyColor2 [1.8 1.8 1.9]
+      :skyColor1 [0.5 0.5 0.5]
+      :skyColor2 [1 1 1]
       :startDist 0.0
       :isoVal 32
-      :voxelRes vres
+      :voxelRes (conj vres (* (vres 0) (vres 1)))
       :maxVoxelIter 192
-      :lightPos [[-2 0 -2 0] [2 0 2 0]]
       :numLights 2
+      :lightPos [[-2 0 -2 0] [2 0 2 0]]
       :shadowBias 0.1
-      :aoAmp 0.1
-      :aoMaxAmp 0.1875
+      :aoAmp 0.2
+      :aoMaxAmp 1 ;;0.1875
       :voxelBoundsMin [(- clip) (- clip) (- clip)]
-      :aoStepDist 0.05
+      :aoStepDist 0.075
       :eyePos (or eyepos [2 0 2])
-      :aoIter 20
+      :aoIter 10
       :voxelSize 0.05
       :normOffsets [[d (- d) (- d) 0] [(- d) (- d) d 0] [(- d) d (- d) 0] [d d d 0]]
       :frameBlend (/ 1.0 iter)
@@ -102,14 +107,13 @@
       :minLightAtt 0.0
       :voxelBounds2 [2 2 2]
       :time t
-      :fogDensity 0.01
+      :fogPow 1
       :voxelBoundsMax [clip clip clip]
       :lightScatter 0.2
       :invVoxelScale [0.5 0.5 0.5]
       :up [0 1 0]
       :voxelBounds [1 1 1]
-      :gamma 1.5
-      :mcSamples (montecarlo 0x4000)}
+      :gamma 1.5}
      (get material-presets mat (material-presets :ao)))))
 
 (defn gyroid [s t p o]
@@ -129,11 +133,11 @@
     (doseq [z (range rz) y (range ry) x (range rx)]
       (when (>= (bit-and z 0x3f) 32)
         (let [v (gyroid 0.01 1.0 [x y z] [0.3875 0.0 0.0])
-	      idx (+ (+ (* z rxy) (* y rx)) x)]
+              idx (+ (+ (* z rxy) (* y rx)) x)]
           (when (and (zero? x) (zero? y)) (prn z))
-            (if (< (Math/abs (- 0.2 v)) 0.05)
-              (if (< (bit-and x 0x3f) 32) (aset-byte voxels idx 64) (aset-byte voxels idx 127))
-              (when (> v 0.35) (aset-byte voxels idx -1))))))
+          (if (< (Math/abs (- 0.2 v)) 0.05)
+            (if (< (bit-and x 0x3f) 32) (aset-byte voxels idx 64) (aset-byte voxels idx 0))
+            (when (> v 0.35) (aset-byte voxels idx -1))))))
     voxels))
 
 (defn make-terrain
@@ -180,20 +184,20 @@
       (cl/rewind v-buf))))
 
 (defn make-pipeline
-  [{:keys [o-buffers v-buf p-buf q-buf num] :as args}]
+  [{:keys [o-buffers v-buf p-buf q-buf mc-buffers num] :as args}]
   (ops/compile-pipeline
    :steps
    (concat
     [{:write [p-buf v-buf]}]
     (mapcat
-     (fn [o-buf]
-       [{:write o-buf}
+     (fn [o-buf mc-buf]
+       [{:write [o-buf mc-buf]}
         {:name "RenderImage"
-         :in [v-buf o-buf]
+         :in [v-buf mc-buf o-buf]
          :out p-buf
          :n num
          :args [[num :int]]}])
-     o-buffers)
+     o-buffers mc-buffers)
     [{:write q-buf}
      {:name "TonemapImage"
       :in [p-buf (first o-buffers)]
@@ -224,25 +228,29 @@
 
 (defn init-renderer
   [{:keys [width height vres iter] :as args}]
-  (let [cl-state (cl/init-state :device :cpu :program (clu/resource-stream cl-program))]
+  (let [cl-state (cl/init-state :device :cpu :program [(clu/resource-stream cl-program) :fast-math :enable-mad])]
     (cl/with-state cl-state
       (println "build log: ")
-      (println :cpu (cl/build-log (:program cl-state) (cl/max-device (:ctx cl-state) :cpu)))
-      ;;(println :gpu (cl/build-log (:program cl-state) (cl/max-device (:ctx cl-state) :gpu)))
+      (println :cpu "-------------------" (cl/build-log (:program cl-state) (cl/max-device (:ctx cl-state) :cpu)))
+      ;;(println :gpu "-------------------" (cl/build-log (:program cl-state) (cl/max-device (:ctx cl-state) :gpu)))
       (let [num (* width height)
             state (time
                    (merge
                     {:cl-state cl-state
                      :o-buffers (make-option-buffers iter args)
+                     :mc-buffers (for [i (range iter)]
+                                   (cl/as-clbuffer :float (montecarlo 0x4000) :readonly))
                      :num num}
                     (ops/init-buffers
                      1 1
                      ;;:v-buf {:wrap (make-volume args) :type :byte :usage :readonly}
                      ;;:v-buf {:wrap (make-terrain args) :type :byte :usage :readonly}
                      :p-buf {:size (* num 4) :type :float :usage :readwrite}
-                     :q-buf {:size num :type :int :usage :writeonly})
+                     :q-buf {:size num :type :int :usage :writeonly}
+                     ;;:mc-buf {:wrap (montecarlo 0x4000) :type :float
+                                        ;:usage :readonly}
+                     )
                     ;;{:v-buf (load-volume "gyroid-512.vox")}
-                    ;;{:v-buf (load-volume "gyroid-sliced-256-s0.02.vox")}
                     {:v-buf (load-volume "gyroid-sliced-512-s0.01.vox")}
                     ;;{:v-buf (load-volume "terrain-512-solid.vox")}
                     ))]
@@ -254,17 +262,19 @@
                               :vres [res res res]
                               :iter iter
                               :eyepos (compute-eyepos (* 1.7 45) 0.66 0.5)
-                              ;;:eyepos (compute-eyepos (* 3 45) 2.5 1)
+                              ;;:eyepos (compute-eyepos (* 3 45) 2.25 0.25)
                               :mat mat})]
     (cl/with-state (:cl-state state)
       (let [argb (time (ops/execute-pipeline (:pipeline state) :verbose false :final-size (:num state)))
             img (pix/make-image width height)
             img-pix (pix/get-pixels img)]
         (prn "copying buffer")
-        (loop [cols (cl/buffer-seq argb) i 0]
-          (when (< i (:num state))
-            (aset-int img-pix i (first cols))
-            (recur (rest cols) (inc i))))
+        (.get ^IntBuffer argb img-pix)
+        (comment
+          (loop [cols (cl/buffer-seq argb) i 0]
+            (when (< i (:num state))
+              (aset-int img-pix i (first cols))
+              (recur (rest cols) (inc i)))))
         (pix/set-pixels img img-pix)
         (pix/save-png img "foo.png")))))
 
