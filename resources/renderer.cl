@@ -165,6 +165,14 @@ float voxelLookup(__global const uchar* voxels, __private const TRenderOptions* 
   return 0.0f;
 }
 
+float voxelLookupI(__global const uchar* voxels, __private const TRenderOptions* opts, const int3 q) {
+  const int4 res = opts->voxelRes;
+  if (q.x >= 0 && q.x < res.x && q.y >= 0 && q.y < res.y && q.z >= 0 && q.z < res.z) {
+    return (float)(voxels[q.z * res.w + q.y * res.x + q.x] > opts->isoVal ? 1.0 : 0.0f);
+  }
+  return 0.0f;
+}
+
 /*
   float voxelDataAt(__global const uchar* voxels, const int3 res, const int3 p) {
   return voxels[p.z * res.x * res.y + p.y * res.x + p.x];
@@ -208,16 +216,18 @@ float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpti
     while(--steps >= 0) {
       const float v = voxelLookup(voxels, opts, p);
       if (v > (float)(opts->isoVal)) {
-        float d = 0.0075f;
-        float nx = voxelLookup(voxels, opts, (float3)(p.x + d, p.y, p.z))
-          - voxelLookup(voxels, opts, (float3)(p.x - d, p.y, p.z));
-        float ny = voxelLookup(voxels, opts, (float3)(p.x, p.y + d, p.z))
-          - voxelLookup(voxels, opts, (float3)(p.x, p.y - d, p.z));
-				float nz = voxelLookup(voxels, opts, (float3)(p.x, p.y, p.z + d))
-          - voxelLookup(voxels, opts, (float3)(p.x, p.y, p.z - d));
-        isec->normal = normalize((float3)(nx, ny, nz));
+        const int4 vres = opts->voxelRes;
+        const int3 q = (int3)(p.x * vres.x, p.y * vres.y, p.z * vres.z);
+        float nx = voxelLookupI(voxels, opts, (int3)(q.x + 1, q.y, q.z))
+          - voxelLookupI(voxels, opts, (int3)(q.x - 1, q.y, q.z));
+        float ny = voxelLookupI(voxels, opts, (int3)(q.x, q.y + 1, q.z))
+          - voxelLookupI(voxels, opts, (int3)(q.x, q.y - 1, q.z));
+				float nz = voxelLookupI(voxels, opts, (int3)(q.x, q.y, q.z + 1))
+          - voxelLookupI(voxels, opts, (int3)(q.x, q.y, q.z - 1));
+        isec->normal = -normalize((float3)(nx, ny, nz));
         return distUnion((float4)(length(rpos - fma(p, opts->voxelBounds2, -opts->voxelBounds)) - opts->voxelSize,
                                   voxelMaterial(opts, v), 0.0f, 0.0f), res);
+        //return distUnion((float4)(0, voxelMaterial(opts, v), 0.0f, 0.0f), res);
       }
       p += delta;
     }
