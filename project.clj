@@ -6,5 +6,6 @@
   :dependencies [[org.clojure/clojure "1.4.0"]
                  [com.postspectacular/structgen "0.1.2"]
                  [com.postspectacular/simplecl "0.1.6-SNAPSHOT"]
-                 [com.postspectacular/piksel "0.1.4"]]
+                 [com.postspectacular/piksel "0.1.4"]
+                 [com.postspectacular/toxi2 "0.1.2-SNAPSHOT"]]
   :jvm-opts ["-server" "-Xms1g" "-Xmx2g" "-XX:+AggressiveOpts" "-XX:+UseParNewGC"])

@@ -90,27 +90,27 @@ float4 distUnion(const float4 v1, const float4 v2) {
 }
 
 /*
-float trilinear(float n000, float n001, float n010, float n011,
-                float n100, float n101, float n110, float n111,
-                float fx, float fy, float fz) {
+  float trilinear(float n000, float n001, float n010, float n011,
+  float n100, float n101, float n110, float n111,
+  float fx, float fy, float fz) {
   float nx = mix(n000, n100, fx);
   float ny = mix(n001, n101, fx);
   float nz = mix(n010, n110, fx);
   float nw = mix(n011, n111, fx);
   return mix(mix(nx, nz, fy), mix(ny, nw, fy), fz);
-}
+  }
 
-float3 barycentricPointInTriangle(const float3 a, const float3 b, const float3 c, const float3 p) {
+  float3 barycentricPointInTriangle(const float3 a, const float3 b, const float3 c, const float3 p) {
   return a * p.x + b * p.y + c * p.z;
-}
+  }
 
-float3 randomPointInTriangle(const float3 a, const float3 b, const float3 c, float4 r) {
+  float3 randomPointInTriangle(const float3 a, const float3 b, const float3 c, float4 r) {
   r = fabs(r);
   float my = 1.0f - r.x;
   while(r.y > my) r.y *= 0.7317f;
   r.z = 1.0f - (r.x + r.y);
   return barycentricPointInTriangle(a, b, c, r.xyz);
-}
+  }
 */
 
 /**
@@ -126,24 +126,24 @@ float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const 
   return b > a ? a : -1.0f;
 }
 /*
-bool triangleContainsPoint(const float3 a, const float3 b, const float3 c,
-                           const float3 p) {
+  bool triangleContainsPoint(const float3 a, const float3 b, const float3 c,
+  const float3 p) {
   return false; // TODO
-}
+  }
 
-float intersectsTriangle(const float3 a, const float3 b, const float3 c,
-                         const float3 p, const float3 dir) {
+  float intersectsTriangle(const float3 a, const float3 b, const float3 c,
+  const float3 p, const float3 dir) {
   float3 n = normalize(cross(b - a, c - a));
   float nd = dot(n, dir);
   float t = -dot(n, p - a) / nd;
   if (t >= 1e-3f) {
-    float3 ip = p + dir * t;
-    if (triangleContainsPoint(a, b, c, ip)) {
-      return t;
-    }
+  float3 ip = p + dir * t;
+  if (triangleContainsPoint(a, b, c, ip)) {
+  return t;
+  }
   }
   return -1.0f;
-}
+  }
 */
 uchar voxelDataAt(__global const uchar* voxels, const int3 res, const int3 p) {
   if (p.x >= 0 && p.x < res.x && p.y >= 0 && p.y < res.y && p.z >= 0 && p.z < res.z) {
@@ -152,15 +152,17 @@ uchar voxelDataAt(__global const uchar* voxels, const int3 res, const int3 p) {
   return 0;
 }
 
-uchar voxelLookup(__global const uchar* voxels, __private const TRenderOptions* opts, const float3 p) {
+float voxelLookup(__global const uchar* voxels, __private const TRenderOptions* opts, const float3 p) {
   //const int3 pv = (int3)(p.x * opts->voxelRes.x, p.y * opts->voxelRes.y, p.z * opts->voxelRes.z);
   //return voxelDataAt(voxels, opts->voxelRes, pv);
   const int4 res = opts->voxelRes;
   const int3 q = (int3)(p.x * res.x, p.y * res.y, p.z * res.z);
+  //if ((q.y & 0x0f) < 8) {
   if (q.x >= 0 && q.x < res.x && q.y >= 0 && q.y < res.y && q.z >= 0 && q.z < res.z) {
-    return voxels[q.z * res.w + q.y * res.x + q.x];
+    return (float)(voxels[q.z * res.w + q.y * res.x + q.x]);
   }
-  return 0;
+  //}
+  return 0.0f;
 }
 
 /*
@@ -189,13 +191,14 @@ uchar voxelLookup(__global const uchar* voxels, __private const TRenderOptions* 
   }
 */
 
-float voxelMaterial(__private const TRenderOptions* opts, const uchar v) {
-  return (v < 168 ? (v < 84 ? 1.0f : 2.0f) : 3.0f);
+float voxelMaterial(__private const TRenderOptions* opts, const float v) {
+  return (v < 168.0f ? (v < 84.0f ? 1.0f : 2.0f) : 3.0f);
 }
 
 float4 distanceToScene(__global const uchar* voxels, __private const TRenderOptions* opts,
                        const float3 rpos, const float3 dir, int steps) {
   float4 res = distUnion((float4)(rpos.y + opts->groundY, 0.0, rpos.xz), (float4)(1e5f, -1.0f, 0.0f, 0.0f));
+  //isec->normal = (float3)(0.0f, 1.0f, 0.0f);
   const float idist = intersectsBox(opts->voxelBoundsMin, opts->voxelBoundsMax, rpos, dir);
   if (idist >= 0.0f && idist < res.x) {
     float3 delta = dir / (steps * 0.5f) * opts->invVoxelScale;
@@ -203,8 +206,16 @@ float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpti
     if (idist > 0.0f) p = fma(dir, (float3)(idist), p);
     p *= opts->invVoxelScale;
     while(--steps >= 0) {
-      const uchar v = voxelLookup(voxels, opts, p);
-      if (v > opts->isoVal) {
+      const float v = voxelLookup(voxels, opts, p);
+      if (v > (float)(opts->isoVal)) {
+        float d = 0.0075f;
+        float nx = voxelLookup(voxels, opts, (float3)(p.x + d, p.y, p.z))
+          - voxelLookup(voxels, opts, (float3)(p.x - d, p.y, p.z));
+        float ny = voxelLookup(voxels, opts, (float3)(p.x, p.y + d, p.z))
+          - voxelLookup(voxels, opts, (float3)(p.x, p.y - d, p.z));
+				float nz = voxelLookup(voxels, opts, (float3)(p.x, p.y, p.z + d))
+          - voxelLookup(voxels, opts, (float3)(p.x, p.y, p.z - d));
+        //isec->normal = normalize((float3)(nx, ny, nz));
         return distUnion((float4)(length(rpos - fma(p, opts->voxelBounds2, -opts->voxelBounds)) - opts->voxelSize,
                                   voxelMaterial(opts, v), 0.0f, 0.0f), res);
       }
@@ -272,7 +283,8 @@ float3 applyAtmosphere(__global const float4* mcSamples,
                        __private const TRenderOptions* opts,
                        __private const TRenderState* state,
                        const TRay* ray, const TIsec* isec, float3 col) {
-  const float3 fa = (float3)(pow(min(isec->distance / opts->maxDist, 1.0f), opts->fogPow));
+  const float3 fa = (float3)(1.0f - exp(isec->distance * isec->distance * -opts->fogPow));
+  const float3 fc = skyGradient(opts, ray->dir);
   col = mad(skyGradient(opts, ray->dir) - col, fa, col);
   for(uchar i=0; i < opts->numLights; i++) {
     float3 lp = lightPos(mcSamples, opts, state, i);
@@ -291,7 +303,8 @@ float shadow(__global const uchar* voxels,
   shadowRay.dir = ldir;
   TIsec shadowIsec;
   raymarch(voxels, opts, &shadowRay, &shadowIsec, ldist, opts->shadowIter);
-  return shadowIsec.distance > 0.0f ? step(ldist, shadowIsec.distance) : 0.0f;
+  //return shadowIsec.distance > 0.0f ? step(ldist, shadowIsec.distance) : 0.0f;
+  return step(ldist, shadowIsec.distance);
 }
 
 // http://en.wikipedia.org/wiki/Schlick's_approximation
@@ -322,14 +335,13 @@ float ambientOcclusion(__global const uchar* voxels,
   float ao = 1.0f;
   float3 d = (float3)(0.0f);
   uint seed = (uint)(pos.x * 3183.75f + pos.y * 1831.42f + pos.z * 2945.87f + opts->time * 2671.918f);
-  const float3 scatter = (float3)(0.2f);
+  const float3 scatter = (float3)(0.1f);
   const float3 ad = (float3)(opts->aoStepDist);
-  for(int i = 0; i <= opts->aoIter && ao > 0.01; i++) {
+  for(int i = 0; i <= opts->aoIter && ao > 0.001; i++) {
     d += ad;
     seed += 37;
     const float3 n = normalize(mad(randFloat4(mcSamples, seed).xyz, scatter, normal));
     const float4 sceneDist = distanceToScene(voxels, opts, mad(n, d, pos), n, opts->maxVoxelIter);
-    //ao *= 1.0f - clamp((d - sceneDist.x) * opts->aoAmp / d, 0.0f, opts->aoMaxAmp);
     ao *= 1.0f - max((d.x - sceneDist.x) * opts->aoAmp / d.x, 0.0f);
   }
   return ao;
@@ -380,8 +392,13 @@ float3 basicSceneColor(__global const uchar* voxels,
     sceneCol = skyGradient(opts, ray->dir);
   } else {
     const TMaterial* mat = objectMaterial(opts, isec->objectID);
+    TMaterial m2 = *mat;
     isec->normal = sceneNormal(voxels, opts, isec->pos, ray->dir);
-    sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, isec, mat, isec->normal,
+    if (isec->objectID > 0) {
+      m2.albedo = (float4)(isec->pos + 1.0f, 0.0f);
+      //m2.albedo = (float4)((isec->normal + 1.0f) * 0.5f, 0.0f);
+    }
+    sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, isec, &m2, isec->normal,
                               skyGradient(opts, reflect(ray->dir, isec->normal)));
   }
   return applyAtmosphere(mcSamples, opts, state, ray, isec, sceneCol);
@@ -398,29 +415,31 @@ float3 sceneColor(__global const uchar* voxels,
     sceneCol = skyGradient(opts, ray->dir);
   } else {
     const TMaterial* mat = objectMaterial(opts, isec.objectID);
+    TMaterial m2 = *mat;
     float3 norm = mad(state->mcNormal, 1.0f / (5.0f + mat->smoothness * 200.0f),
                       sceneNormal(voxels, opts, isec.pos, ray->dir));
     float3 reflectCol = (float3)(1.0f);
+    if (isec.objectID > 0) {
+      m2.albedo = (float4)(isec.pos + 1.0f, 0.0);
+      //m2.albedo = (float4)((norm + 1.0f) * 0.5f, 0.0f);
+    }
     if (mat->r0 > 0.0f && opts->reflectIter > 0) {
       TIsec rIsec;
       rIsec.pos = isec.pos;
       rIsec.normal = norm;
       TRay reflectRay;
       reflectRay.dir = ray->dir;
-      float j = 0;
       for(int i = 0; i < opts->reflectIter; i++) {
         reflectRay.dir = reflect(reflectRay.dir, rIsec.normal);
         reflectRay.pos = rIsec.pos + reflectRay.dir * 0.0075f;
-        reflectCol *= basicSceneColor(voxels, mcSamples, opts, state, &reflectRay, &rIsec);
-        //j++;
+        reflectCol += basicSceneColor(voxels, mcSamples, opts, state, &reflectRay, &rIsec);
         if (rIsec.objectID < 0) break;
         if (objectMaterial(opts, rIsec.objectID)->r0 < 0.001) break;
       }
-      //reflectCol /= j;
     } else {
       reflectCol = skyGradient(opts, reflect(ray->dir, norm));
     }
-    sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, &isec, mat, norm, reflectCol);
+    sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, &isec, &m2, norm, reflectCol);
   }
   sceneCol = applyAtmosphere(mcSamples, opts, state, ray, &isec, sceneCol);
   return sceneCol;
@@ -470,7 +489,7 @@ __kernel void RenderImage(__global const uchar* voxels,
     state = initRenderState(&opts, mcSamples, id);
     ray = cameraRayLookat(&opts, &state);
     const float3 sceneCol = sceneColor(voxels, mcSamples, &opts, &state, &ray) * opts.exposure;
-    const float3 prevCol = pixels[id].xyz;
+    const float3 prevCol = pixels[id].xyz + (state.mcPos.xyz - 0.4f) * INV8BIT;
     pixels[id] = (float4)(mad(sceneCol - prevCol, (float3)(opts.frameBlend), prevCol), 1.0f);
   }
 }
