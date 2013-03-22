@@ -145,30 +145,19 @@ float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const 
   return -1.0f;
   }
 */
-uchar voxelDataAt(__global const uchar* voxels, const int3 res, const int3 p) {
-  if (p.x >= 0 && p.x < res.x && p.y >= 0 && p.y < res.y && p.z >= 0 && p.z < res.z) {
-    return voxels[p.z * res.x * res.y + p.y * res.x + p.x];
-  }
-  return 0;
-}
-
-float voxelLookup(__global const uchar* voxels, __private const TRenderOptions* opts, const float3 p) {
-  //const int3 pv = (int3)(p.x * opts->voxelRes.x, p.y * opts->voxelRes.y, p.z * opts->voxelRes.z);
-  //return voxelDataAt(voxels, opts->voxelRes, pv);
+uchar voxelLookup(__global const uchar* voxels, __private const TRenderOptions* opts, const float3 p) {
   const int4 res = opts->voxelRes;
   const int3 q = (int3)(p.x * res.x, p.y * res.y, p.z * res.z);
-  //if ((q.y & 0x0f) < 8) {
   if (q.x >= 0 && q.x < res.x && q.y >= 0 && q.y < res.y && q.z >= 0 && q.z < res.z) {
-    return (float)(voxels[q.z * res.w + q.y * res.x + q.x]);
+    return voxels[q.z * res.w + q.y * res.x + q.x];
   }
-  //}
-  return 0.0f;
+  return 0;
 }
 
 float voxelLookupI(__global const uchar* voxels, __private const TRenderOptions* opts, const int3 q) {
   const int4 res = opts->voxelRes;
   if (q.x >= 0 && q.x < res.x && q.y >= 0 && q.y < res.y && q.z >= 0 && q.z < res.z) {
-    return (float)(voxels[q.z * res.w + q.y * res.x + q.x] > opts->isoVal ? 1.0 : 0.0f);
+    return step((float)(opts->isoVal), (float)(voxels[q.z * res.w + q.y * res.x + q.x]));
   }
   return 0.0f;
 }
@@ -199,8 +188,8 @@ float voxelLookupI(__global const uchar* voxels, __private const TRenderOptions*
   }
 */
 
-float voxelMaterial(__private const TRenderOptions* opts, const float v) {
-  return (v < 168.0f ? (v < 84.0f ? 1.0f : 2.0f) : 3.0f);
+float voxelMaterial(__private const TRenderOptions* opts, const uchar v) {
+  return (v < 168 ? (v < 84 ? 1.0f : 2.0f) : 3.0f);
 }
 
 float4 distanceToScene(__global const uchar* voxels, __private const TRenderOptions* opts, TIsec* isec,
@@ -214,8 +203,8 @@ float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpti
     if (idist > 0.0f) p = fma(dir, (float3)(idist), p);
     p *= opts->invVoxelScale;
     while(--steps >= 0) {
-      const float v = voxelLookup(voxels, opts, p);
-      if (v > (float)(opts->isoVal)) {
+      const uchar v = voxelLookup(voxels, opts, p);
+      if (v > opts->isoVal) {
         const int4 vres = opts->voxelRes;
         const int3 q = (int3)(p.x * vres.x, p.y * vres.y, p.z * vres.z);
         float nx = voxelLookupI(voxels, opts, (int3)(q.x + 1, q.y, q.z))
@@ -405,10 +394,10 @@ float3 basicSceneColor(__global const uchar* voxels,
     const TMaterial* mat = objectMaterial(opts, isec->objectID);
     TMaterial m2 = *mat;
     //isec->normal = sceneNormal(voxels, opts, isec->pos, ray->dir);
-    if (isec->objectID > 0) {
-      m2.albedo = (float4)(isec->pos + 1.0f, 0.0f);
-      //m2.albedo = (float4)((isec->normal + 1.0f) * 0.5f, 0.0f);
-    }
+    //if (isec->objectID > 0) {
+    // m2.albedo = (float4)(isec->pos + 1.0f, 0.0f);
+    // m2.albedo = (float4)((isec->normal + 1.0f) * 0.5f, 0.0f);
+    //}
     sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, isec, &m2, isec->normal,
                               skyGradient(opts, reflect(ray->dir, isec->normal)));
   }
@@ -432,10 +421,10 @@ float3 sceneColor(__global const uchar* voxels,
     //                  ray->dir));
     float3 norm = mad(state->mcNormal, 1.0f / (5.0f + mat->smoothness * 200.0f), isec.normal);
     float3 reflectCol = (float3)(1.0f);
-    if (isec.objectID > 0) {
-      m2.albedo = (float4)(isec.pos + 1.0f, 0.0);
+    //if (isec.objectID > 0) {
+    //m2.albedo = (float4)(isec.pos + 1.0f, 0.0);
       //m2.albedo = (float4)((norm + 1.0f) * 0.5f, 0.0f);
-    }
+    //}
     if (mat->r0 > 0.0f && opts->reflectIter > 0) {
       TIsec rIsec;
       rIsec.pos = isec.pos;
