@@ -195,10 +195,10 @@ float voxelMaterial(__private const TRenderOptions* opts, const float v) {
   return (v < 168.0f ? (v < 84.0f ? 1.0f : 2.0f) : 3.0f);
 }
 
-float4 distanceToScene(__global const uchar* voxels, __private const TRenderOptions* opts,
+float4 distanceToScene(__global const uchar* voxels, __private const TRenderOptions* opts, TIsec* isec,
                        const float3 rpos, const float3 dir, int steps) {
   float4 res = distUnion((float4)(rpos.y + opts->groundY, 0.0, rpos.xz), (float4)(1e5f, -1.0f, 0.0f, 0.0f));
-  //isec->normal = (float3)(0.0f, 1.0f, 0.0f);
+  isec->normal = (float3)(0.0f, 1.0f, 0.0f);
   const float idist = intersectsBox(opts->voxelBoundsMin, opts->voxelBoundsMax, rpos, dir);
   if (idist >= 0.0f && idist < res.x) {
     float3 delta = dir / (steps * 0.5f) * opts->invVoxelScale;
@@ -215,7 +215,7 @@ float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpti
           - voxelLookup(voxels, opts, (float3)(p.x, p.y - d, p.z));
 				float nz = voxelLookup(voxels, opts, (float3)(p.x, p.y, p.z + d))
           - voxelLookup(voxels, opts, (float3)(p.x, p.y, p.z - d));
-        //isec->normal = normalize((float3)(nx, ny, nz));
+        isec->normal = normalize((float3)(nx, ny, nz));
         return distUnion((float4)(length(rpos - fma(p, opts->voxelBounds2, -opts->voxelBounds)) - opts->voxelSize,
                                   voxelMaterial(opts, v), 0.0f, 0.0f), res);
       }
@@ -224,7 +224,7 @@ float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpti
   }
   return res;
 }
-
+/*
 float3 sceneNormal(__global const uchar* voxels,
                    __private const TRenderOptions* opts,
                    const float3 p, const float3 dir) {
@@ -238,14 +238,14 @@ float3 sceneNormal(__global const uchar* voxels,
   n4 *= distanceToScene(voxels, opts, p + n4, dir, opts->maxVoxelIter).x;
   return normalize(n1 + n2 + n3 + n4);
 }
-
+*/
 void raymarch(__global const uchar* voxels,
               __private const TRenderOptions* opts,
               const TRay* ray, TIsec* result, const float maxDist, int maxSteps) {
   result->distance = opts->startDist;
   while(--maxSteps >= 0) {
     result->pos = ray->pos + ray->dir * result->distance;
-    const float4 sceneDist = distanceToScene(voxels, opts, result->pos, ray->dir, opts->maxVoxelIter);
+    const float4 sceneDist = distanceToScene(voxels, opts, result, result->pos, ray->dir, opts->maxVoxelIter);
     result->objectID = (int)(sceneDist.y);
     if(fabs(sceneDist.x) <= opts->eps || result->distance >= maxDist) {
       break;
@@ -337,11 +337,12 @@ float ambientOcclusion(__global const uchar* voxels,
   uint seed = (uint)(pos.x * 3183.75f + pos.y * 1831.42f + pos.z * 2945.87f + opts->time * 2671.918f);
   const float3 scatter = (float3)(0.1f);
   const float3 ad = (float3)(opts->aoStepDist);
+  TIsec isec;
   for(int i = 0; i <= opts->aoIter && ao > 0.001; i++) {
     d += ad;
     seed += 37;
     const float3 n = normalize(mad(randFloat4(mcSamples, seed).xyz, scatter, normal));
-    const float4 sceneDist = distanceToScene(voxels, opts, mad(n, d, pos), n, opts->maxVoxelIter);
+    const float4 sceneDist = distanceToScene(voxels, opts, &isec, mad(n, d, pos), n, opts->maxVoxelIter);
     ao *= 1.0f - max((d.x - sceneDist.x) * opts->aoAmp / d.x, 0.0f);
   }
   return ao;
@@ -393,7 +394,7 @@ float3 basicSceneColor(__global const uchar* voxels,
   } else {
     const TMaterial* mat = objectMaterial(opts, isec->objectID);
     TMaterial m2 = *mat;
-    isec->normal = sceneNormal(voxels, opts, isec->pos, ray->dir);
+    //isec->normal = sceneNormal(voxels, opts, isec->pos, ray->dir);
     if (isec->objectID > 0) {
       m2.albedo = (float4)(isec->pos + 1.0f, 0.0f);
       //m2.albedo = (float4)((isec->normal + 1.0f) * 0.5f, 0.0f);
@@ -416,8 +417,10 @@ float3 sceneColor(__global const uchar* voxels,
   } else {
     const TMaterial* mat = objectMaterial(opts, isec.objectID);
     TMaterial m2 = *mat;
-    float3 norm = mad(state->mcNormal, 1.0f / (5.0f + mat->smoothness * 200.0f),
-                      sceneNormal(voxels, opts, isec.pos, ray->dir));
+    //float3 norm = mad(state->mcNormal, 1.0f / (5.0f + mat->smoothness * 200.0f),
+    //                  sceneNormal(voxels, opts, isec.pos,
+    //                  ray->dir));
+    float3 norm = mad(state->mcNormal, 1.0f / (5.0f + mat->smoothness * 200.0f), isec.normal);
     float3 reflectCol = (float3)(1.0f);
     if (isec.objectID > 0) {
       m2.albedo = (float4)(isec.pos + 1.0f, 0.0);
