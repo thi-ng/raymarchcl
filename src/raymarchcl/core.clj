@@ -51,8 +51,8 @@
     :lightPos [[-2 0 -2 0] [2 0 2 0]]
     :numLights 2
     :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
-                {:albedo [4.9 0.9 0.05 1.0] :r0 0.1 :smoothness 0.8}
-                {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
+                {:albedo [4.9 0.9 0.05 1.0] :r0 0.1 :smoothness 0.5}
+                {:albedo [1.9 1.9 1.9 1.0] :r0 0.01 :smoothness 0.4}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
     :aoAmp 0.1875
     :reflectIter 3}
@@ -116,7 +116,7 @@
       :voxelSize 0.025
       :normOffsets [[d (- d) (- d) 0] [(- d) (- d) d 0] [(- d) d (- d) 0] [d d d 0]]
       :frameBlend (/ 1.0 iter)
-      :groundY 1.001
+      :groundY 1.05
       :shadowIter 128
       :lightColor [50 50 50]
       :targetPos (or targetpos [0 -0.15 0])
@@ -291,7 +291,7 @@
                               :iter iter
                               ;;:eyepos (compute-eyepos (* 1.7 45) 0.66 0.5)
                               :eyepos (compute-eyepos theta dist 0.35)
-                              :targetpos [0.25 -0.4 0]
+                              :targetpos [0 -0.4 0]
                               :mat mat
                               :vname vname})]
     (cl/with-state (:cl-state state)

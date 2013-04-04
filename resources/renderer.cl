@@ -162,6 +162,41 @@ float voxelLookupI(__global const uchar* voxels, __private const TRenderOptions*
   return 0.0f;
 }
 
+float3 voxelNormal(__global const uchar* voxels, __private const TRenderOptions* opts, const int3 q) {
+  float nx = voxelLookupI(voxels, opts, (int3)(q.x + 1, q.y, q.z))
+    - voxelLookupI(voxels, opts, (int3)(q.x - 1, q.y, q.z));
+  float ny = voxelLookupI(voxels, opts, (int3)(q.x, q.y + 1, q.z))
+    - voxelLookupI(voxels, opts, (int3)(q.x, q.y - 1, q.z));
+  float nz = voxelLookupI(voxels, opts, (int3)(q.x, q.y, q.z + 1))
+    - voxelLookupI(voxels, opts, (int3)(q.x, q.y, q.z - 1));
+  //return -normalize((float3)(nx, ny, nz));
+  return -(float3)(nx, ny, nz);
+}
+
+float3 voxelNormalSmooth(__global const uchar* voxels, __private const TRenderOptions* opts, const int3 q) {
+  //float3 n = voxelNormal(voxels, opts, q);
+  float3 n = (float3)(0);
+  for(char z = -1; z <= 1; z++) {
+    for(char y = -1; y <= 1; y++) {
+      for(char x = -1; x <= 1; x++) {
+        int3 qq = (int3)(q.x - x, q.y + y, q.z + z);
+        if (voxelLookupI(voxels, opts, qq) > 0.0f) {
+          n += voxelNormal(voxels, opts, qq);
+        }
+      }
+    }
+  }
+  /*
+    n += voxelNormal(voxels, opts, (int3)(q.x - 1, q.y, q.z));
+    n += voxelNormal(voxels, opts, (int3)(q.x + 1, q.y, q.z));
+    n += voxelNormal(voxels, opts, (int3)(q.x, q.y - 1, q.z));
+    n += voxelNormal(voxels, opts, (int3)(q.x, q.y + 1, q.z));
+    n += voxelNormal(voxels, opts, (int3)(q.x, q.y, q.z - 1));
+    n += voxelNormal(voxels, opts, (int3)(q.x, q.y, q.z + 1));
+  */
+  return normalize(n);
+}
+
 /*
   float voxelDataAt(__global const uchar* voxels, const int3 res, const int3 p) {
   return voxels[p.z * res.x * res.y + p.y * res.x + p.x];
@@ -195,7 +230,7 @@ float voxelMaterial(__private const TRenderOptions* opts, const uchar v) {
 float4 distanceToScene(__global const uchar* voxels, __private const TRenderOptions* opts, TIsec* isec,
                        const float3 rpos, const float3 dir, int steps) {
   float4 res = distUnion((float4)(rpos.y + opts->groundY, 0.0, rpos.xz), (float4)(1e5f, -1.0f, 0.0f, 0.0f));
-  isec->normal = (float3)(0.0f, 1.0f, 0.0f);
+  isec->normal = (res.x < 1e5) ? (float3)(0.0f, 1.0f, 0.0f) : -dir;
   const float idist = intersectsBox(opts->voxelBoundsMin, opts->voxelBoundsMax, rpos, dir);
   if (idist >= 0.0f && idist < res.x) {
     float3 delta = dir / (steps * 0.5f) * opts->invVoxelScale;
@@ -207,13 +242,7 @@ float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpti
       if (v > opts->isoVal) {
         const int4 vres = opts->voxelRes;
         const int3 q = (int3)(p.x * vres.x, p.y * vres.y, p.z * vres.z);
-        float nx = voxelLookupI(voxels, opts, (int3)(q.x + 1, q.y, q.z))
-          - voxelLookupI(voxels, opts, (int3)(q.x - 1, q.y, q.z));
-        float ny = voxelLookupI(voxels, opts, (int3)(q.x, q.y + 1, q.z))
-          - voxelLookupI(voxels, opts, (int3)(q.x, q.y - 1, q.z));
-				float nz = voxelLookupI(voxels, opts, (int3)(q.x, q.y, q.z + 1))
-          - voxelLookupI(voxels, opts, (int3)(q.x, q.y, q.z - 1));
-        isec->normal = -normalize((float3)(nx, ny, nz));
+        isec->normal = voxelNormalSmooth(voxels, opts, q);
         return distUnion((float4)(length(rpos - fma(p, opts->voxelBounds2, -opts->voxelBounds)) - opts->voxelSize,
                                   voxelMaterial(opts, v), 0.0f, 0.0f), res);
         //return distUnion((float4)(0, voxelMaterial(opts, v), 0.0f, 0.0f), res);
@@ -224,9 +253,9 @@ float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpti
   return res;
 }
 /*
-float3 sceneNormal(__global const uchar* voxels,
-                   __private const TRenderOptions* opts,
-                   const float3 p, const float3 dir) {
+  float3 sceneNormal(__global const uchar* voxels,
+  __private const TRenderOptions* opts,
+  const float3 p, const float3 dir) {
   float3 n1 = opts->normOffsets[0].xyz;
   float3 n2 = opts->normOffsets[1].xyz;
   float3 n3 = opts->normOffsets[2].xyz;
@@ -236,7 +265,7 @@ float3 sceneNormal(__global const uchar* voxels,
   n3 *= distanceToScene(voxels, opts, p + n3, dir, opts->maxVoxelIter).x;
   n4 *= distanceToScene(voxels, opts, p + n4, dir, opts->maxVoxelIter).x;
   return normalize(n1 + n2 + n3 + n4);
-}
+  }
 */
 void raymarch(__global const uchar* voxels,
               __private const TRenderOptions* opts,
@@ -423,7 +452,7 @@ float3 sceneColor(__global const uchar* voxels,
     float3 reflectCol = (float3)(1.0f);
     //if (isec.objectID > 0) {
     //m2.albedo = (float4)(isec.pos + 1.0f, 0.0);
-      //m2.albedo = (float4)((norm + 1.0f) * 0.5f, 0.0f);
+    //m2.albedo = (float4)((norm + 1.0f) * 0.5f, 0.0f);
     //}
     if (mat->r0 > 0.0f && opts->reflectIter > 0) {
       TIsec rIsec;
