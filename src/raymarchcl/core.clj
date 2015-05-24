@@ -1,10 +1,10 @@
 (ns raymarchcl.core
   (:require
-   [simplecl.core :as cl]
-   [simplecl.utils :as clu]
-   [simplecl.ops :as ops]
-   [structgen.core :as sg]
-   [structgen.parser :as sp]
+   [thi.ng.simplecl.core :as cl]
+   [thi.ng.simplecl.utils :as clu]
+   [thi.ng.simplecl.ops :as ops]
+   [thi.ng.structgen.core :as sg]
+   [thi.ng.structgen.parser :as sp]
    [piksel.core :as pix]
    [clojure.java.io :as io]
    [toxi.math.core :as m])
@@ -229,7 +229,7 @@
 
 (defn make-option-buffers
   [n opts]
-  (let [t-opts (sg/lookup :TRenderOptions)]
+  (let [t-opts (sg/lookup :TRenderOpts)]
     (vec
      (for [i (range n)]
        (cl/as-clbuffer
@@ -238,7 +238,7 @@
 
 (defn update-option-buffers
   [buffers opts]
-  (let [t-opts (sg/lookup :TRenderOptions)]
+  (let [t-opts (sg/lookup :TRenderOpts)]
     (vec
      (for [i (range (count buffers))
            :let [b (get buffers i)]]
