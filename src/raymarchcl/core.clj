@@ -50,11 +50,11 @@
    {:lightColor [[28 18 8 0] [8 18 28 0]]
     :lightPos [[-2 0 -2 0] [2 0 2 0]]
     :numLights 2
-    :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
-                {:albedo [4.9 0.9 0.05 1.0] :r0 0.1 :smoothness 0.5}
+    :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.1 :smoothness 0.9}
+                {:albedo [4.9 0.9 0.05 1.0] :r0 0.01 :smoothness 0.5}
                 {:albedo [1.9 1.9 1.9 1.0] :r0 0.01 :smoothness 0.4}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
-    :aoAmp 0.1875
+    :aoAmp 0.25
     :reflectIter 3}
    :metal
    {:lightColor [[28 18 8 0] [16 36 56 0]]
@@ -87,9 +87,10 @@
     :reflectIter 0}})
 
 (defn render-options
-  [{:keys [width height vres t iter eyepos mat fov targetpos]}]
+  [{:keys [width height vres t iter eyepos mat fov dof targetpos gamma]}]
   (let [eps 0.005
         d (* eps 1.1)
+        -d (- d)
         clip 0.99]
     (merge
      {:resolution [width height]
@@ -114,7 +115,7 @@
       :eyePos (or eyepos [2 0 2])
       :aoIter 5
       :voxelSize 0.025
-      :normOffsets [[d (- d) (- d) 0] [(- d) (- d) d 0] [(- d) d (- d) 0] [d d d 0]]
+      :normOffsets [[d -d -d 0] [-d -d d 0] [-d d -d 0] [d d d 0]]
       :frameBlend (/ 1.0 iter)
       :groundY 1.05
       :shadowIter 128
@@ -122,7 +123,7 @@
       :targetPos (or targetpos [0 -0.15 0])
       :maxIter 128
       :reflectIter 0
-      :dof 0.005
+      :dof (or dof 0.01)
       :exposure 3.5
       :minLightAtt 0.0
       :voxelBounds2 [2 2 2]
@@ -133,7 +134,7 @@
       :invVoxelScale [0.5 0.5 0.5]
       :up [0 1 0]
       :voxelBounds [1 1 1]
-      :gamma 1.5}
+      :gamma (or gamma 1.5)}
      (get material-presets mat (material-presets :ao)))))
 
 (defn gyroid [s t p o]

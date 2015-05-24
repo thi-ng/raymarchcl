@@ -4,7 +4,7 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.4.0"]
-                 [com.postspectacular/structgen "0.1.2"]
+                 [com.postspectacular/structgen "0.1.2" :exclusions [org.clojure/clojure]]
                  [com.postspectacular/simplecl "0.1.6-SNAPSHOT"]
                  [com.postspectacular/piksel "0.1.4"]
                  [com.postspectacular/toxi2 "0.1.2-SNAPSHOT"]]

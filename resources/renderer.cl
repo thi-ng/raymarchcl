@@ -81,6 +81,66 @@ typedef struct {
 
 __constant float INV8BIT = 1.0f / 255.0f;
 
+float4 randFloat4(__global const float4* mcSamples, uint seed);
+float4 distUnion(const float4 v1, const float4 v2);
+float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const float3 dir);
+uchar voxelLookup(__global const uchar* voxels, __private const TRenderOptions* opts, const float3 p);
+float voxelLookupI(__global const uchar* voxels, __private const TRenderOptions* opts, const int3 q);
+float3 voxelNormal(__global const uchar* voxels, __private const TRenderOptions* opts, const int3 q);
+float3 voxelNormalSmooth(__global const uchar* voxels, __private const TRenderOptions* opts, const int3 q);
+float voxelMaterial(__private const TRenderOptions* opts, const uchar v);
+float4 distanceToScene(__global const uchar* voxels, __private const TRenderOptions* opts, TIsec* isec,
+                       const float3 rpos, const float3 dir, int steps);
+void raymarch(__global const uchar* voxels,
+              __private const TRenderOptions* opts,
+              const TRay* ray, TIsec* result, const float maxDist, int maxSteps);
+__private const TMaterial* objectMaterial(__private const TRenderOptions* opts, const int objectID);
+float3 skyGradient(__private const TRenderOptions* opts, const float3 dir);
+float3 lightPos(__global const float4* mcSamples,
+                __private const TRenderOptions* opts,
+                __private const TRenderState* state,
+                const int i);
+float3 reflect(const float3 v, const float3 n);
+float3 applyAtmosphere(__global const float4* mcSamples,
+                       __private const TRenderOptions* opts,
+                       __private const TRenderState* state,
+                       const TRay* ray, const TIsec* isec, float3 col);
+float shadow(__global const uchar* voxels,
+             __private const TRenderOptions* opts,
+             const float3 p, const float3 ldir, const float ldist);
+float schlick(const float r0, const float smooth, const float3 normal, const float3 view);
+float diffuseIntensity(const float3 ldir, const float3 normal);
+float blinnPhongIntensity(const float smooth, const TRay* ray,
+                          const float3 lightDir, const float3 normal);
+float ambientOcclusion(__global const uchar* voxels,
+                       __global const float4* mcSamples,
+                       __private const TRenderOptions* opts,
+                       const float3 pos, const float3 normal);
+float3 objectLighting(__global const uchar* voxels,
+                      __global const float4* mcSamples,
+                      __private const TRenderOptions* opts,
+                      __private const TRenderState* state,
+                      __private const TRay* ray,
+                      __private TIsec* isec,
+                      __private const TMaterial* mat,
+                      const float3 normal, const float3 reflectCol);
+float3 basicSceneColor(__global const uchar* voxels,
+                       __global const float4* mcSamples,
+                       const TRenderOptions* opts,
+                       const TRenderState* state,
+                       const TRay* ray, TIsec* isec);
+float3 sceneColor(__global const uchar* voxels,
+                  __global const float4* mcSamples,
+                  const TRenderOptions* opts,
+                  const TRenderState* state, const TRay* ray);
+float3 gamma(const float3 col);
+float3 tonemap(const float3 col, const float g);
+TRay cameraRayLookat(const TRenderOptions* opts, const TRenderState* state);
+TRenderState initRenderState(const TRenderOptions* opts,
+                             __global const float4* mcSamples, const int id);
+
+/* ---- implementation ---- */
+
 float4 randFloat4(__global const float4* mcSamples, uint seed) {
   return mcSamples[seed & 0x3fff];
 }
@@ -292,7 +352,8 @@ __private const TMaterial* objectMaterial(__private const TRenderOptions* opts, 
 }
 
 float3 skyGradient(__private const TRenderOptions* opts, const float3 dir) {
-  return mad(opts->skyColor2 - opts->skyColor1, (float3)(dir.y * 0.5f + 0.5f), opts->skyColor1);
+  return mix(opts->skyColor1, opts->skyColor2, (float3)(dir.y * 0.5f + 0.5f));
+  //return mad(opts->skyColor2 - opts->skyColor1, (float3)(dir.y * 0.5f + 0.5f), opts->skyColor1);
 }
 
 float3 lightPos(__global const float4* mcSamples,
@@ -312,7 +373,7 @@ float3 applyAtmosphere(__global const float4* mcSamples,
                        __private const TRenderState* state,
                        const TRay* ray, const TIsec* isec, float3 col) {
   const float3 fa = (float3)(1.0f - exp(isec->distance * isec->distance * -opts->fogPow));
-  const float3 fc = skyGradient(opts, ray->dir);
+  //const float3 fc = skyGradient(opts, ray->dir);
   col = mad(skyGradient(opts, ray->dir) - col, fa, col);
   for(uchar i=0; i < opts->numLights; i++) {
     float3 lp = lightPos(mcSamples, opts, state, i);
@@ -363,10 +424,10 @@ float ambientOcclusion(__global const uchar* voxels,
   float ao = 1.0f;
   float3 d = (float3)(0.0f);
   uint seed = (uint)(pos.x * 3183.75f + pos.y * 1831.42f + pos.z * 2945.87f + opts->time * 2671.918f);
-  const float3 scatter = (float3)(0.1f);
+  const float3 scatter = (float3)(0.2f);
   const float3 ad = (float3)(opts->aoStepDist);
   TIsec isec;
-  for(int i = 0; i <= opts->aoIter && ao > 0.001; i++) {
+  for(int i = 0; i <= opts->aoIter && ao > 0.01; i++) {
     d += ad;
     seed += 37;
     const float3 n = normalize(mad(randFloat4(mcSamples, seed).xyz, scatter, normal));
@@ -424,8 +485,8 @@ float3 basicSceneColor(__global const uchar* voxels,
     TMaterial m2 = *mat;
     //isec->normal = sceneNormal(voxels, opts, isec->pos, ray->dir);
     //if (isec->objectID > 0) {
-    // m2.albedo = (float4)(isec->pos + 1.0f, 0.0f);
-    // m2.albedo = (float4)((isec->normal + 1.0f) * 0.5f, 0.0f);
+      //m2.albedo = (float4)(isec->pos + 1.0f, 0.0f);
+      //m2.albedo = (float4)(fma(isec->normal.zyx, 2.0, 2.0f), 0.0f);
     //}
     sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, isec, &m2, isec->normal,
                               skyGradient(opts, reflect(ray->dir, isec->normal)));
@@ -451,8 +512,8 @@ float3 sceneColor(__global const uchar* voxels,
     float3 norm = mad(state->mcNormal, 1.0f / (5.0f + mat->smoothness * 200.0f), isec.normal);
     float3 reflectCol = (float3)(1.0f);
     //if (isec.objectID > 0) {
-    //m2.albedo = (float4)(isec.pos + 1.0f, 0.0);
-    //m2.albedo = (float4)((norm + 1.0f) * 0.5f, 0.0f);
+      //m2.albedo = (float4)(isec.pos + 1.0f, 0.0);
+      //m2.albedo = (float4)(fma(norm.zyx, 2.0f, 2.0f), 0.0f);
     //}
     if (mat->r0 > 0.0f && opts->reflectIter > 0) {
       TIsec rIsec;
