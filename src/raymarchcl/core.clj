@@ -1,12 +1,13 @@
 (ns raymarchcl.core
   (:require
-   [simplecl.core :as cl]
-   [simplecl.utils :as clu]
-   [simplecl.ops :as ops]
-   [structgen.core :as sg]
-   [structgen.parser :as sp]
+   [thi.ng.simplecl.core :as cl]
+   [thi.ng.simplecl.utils :as clu]
+   [thi.ng.simplecl.ops :as ops]
+   [thi.ng.structgen.core :as sg]
+   [thi.ng.structgen.parser :as sp]
    [piksel.core :as pix]
-   [clojure.java.io :as io])
+   [clojure.java.io :as io]
+   [toxi.math.core :as m])
   (:import
    [java.nio ByteBuffer IntBuffer]))
 
@@ -17,6 +18,17 @@
 ;; parse typedefs in OpenCL program and register all found struct types
 (sg/reset-registry!)
 (sg/register! (sp/parse-specs (slurp (clu/resource-stream cl-program))))
+
+(defn trilin
+  [v000 v001 v010 v011 v100 v101 v110 v111 fx fy fz]
+  (let [mix #(+ % (* (- %2 %) %3))
+        vx (mix v000 v100 fx)
+        vy (mix v001 v101 fx)
+        vz (mix v010 v110 fx)
+        vw (mix v011 v111 fx)
+        i1 (mix vx vz fy)
+        i2 (mix vy vw fy)]
+    (mix i1 i2 fz)))
 
 (defn montecarlo
   [num]
@@ -38,21 +50,31 @@
    {:lightColor [[28 18 8 0] [8 18 28 0]]
     :lightPos [[-2 0 -2 0] [2 0 2 0]]
     :numLights 2
-    :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
-                {:albedo [4.9 0.9 0.05 1.0] :r0 0.1 :smoothness 0.8}
-                {:albedo [1.9 1.9 1.9 1.0] :r0 0.3 :smoothness 0.4}
+    :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.1 :smoothness 0.9}
+                {:albedo [4.9 0.9 0.05 1.0] :r0 0.01 :smoothness 0.5}
+                {:albedo [1.9 1.9 1.9 1.0] :r0 0.01 :smoothness 0.4}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.8 :smoothness 0.1}]
-    :aoAmp 0.1875
+    :aoAmp 0.25
     :reflectIter 3}
    :metal
-   {:lightColor [[28 18 8 0]]
-    :lightPos [[0 2 0 0]]
-    :numLights 1
-    :materials [{:albedo [1.0 1.0 1.0 1.0] :r0 0.4 :smoothness 0.9}
-                {:albedo [0.0 0.01 0.075 1.0] :r0 0.2 :smoothness 0.7}
+   {:lightColor [[28 18 8 0] [16 36 56 0]]
+    :lightPos [[0 2 0 0] [3 0 3 0]]
+    :numLights 2
+    :materials [{:albedo [0.01 0.01 0.01 1.0] :r0 0.1 :smoothness 0.5}
+                {:albedo [1.9 1.9 1.9 1.0] :r0 0.1 :smoothness 0.5}
+                {:albedo [0.9 0.9 0.9 1.0] :r0 0.75 :smoothness 0.2}
+                {:albedo [1.0 1.0 1.0 1.0] :r0 0.2 :smoothness 0.1}]
+    :aoAmp 0.25
+    :reflectIter 3}
+   :metal2
+   {:lightColor [[28 18 8 0] [8 18 28 0]]
+    :lightPos [[-2 0 2 0] [2 0 2 0]]
+    :numLights 2
+    :materials [{:albedo [0.0 0.0 0.0 1.0] :r0 0.1 :smoothness 0.9}
+                {:albedo [1.0 1.01 1.075 1.0] :r0 0.4 :smoothness 0.7}
                 {:albedo [1.9 1.9 1.9 1.0] :r0 0.4 :smoothness 0.5}
                 {:albedo [0.9 0.9 0.9 1.0] :r0 0.75 :smoothness 0.2}]
-    :aoAmp 0.1875
+    :aoAmp 0.25
     :reflectIter 3}
    :ao
    {:lightColor [[50 50 50 0]]
@@ -65,21 +87,20 @@
     :reflectIter 0}})
 
 (defn render-options
-  [{:keys [width height vres t iter eyepos mat]}]
+  [{:keys [width height vres t iter eyepos mat fov dof targetpos gamma]}]
   (let [eps 0.005
-        d (* eps 1.05)
+        d (* eps 1.1)
+        -d (- d)
         clip 0.99]
     (merge
      {:resolution [width height]
-      :fov 2
-      :flareAmp 0.02
-      :maxDist 10
+      :fov (or fov 2)
+      :flareAmp 0.015
+      :maxDist 30
       :invAspect (float (/ height width))
       :eps eps
-      ;;:skyColor1 [1.0 1.0 1.0]
-      ;;:skyColor2 [1.8 1.8 1.9]
-      :skyColor1 [0.5 0.5 0.5]
-      :skyColor2 [1 1 1]
+      :skyColor1 [1.8 1.8 1.9]
+      :skyColor2 [0.1 0.1 0.1]
       :startDist 0.0
       :isoVal 32
       :voxelRes (conj vres (* (vres 0) (vres 1)))
@@ -90,30 +111,30 @@
       :aoAmp 0.2
       :aoMaxAmp 1 ;;0.1875
       :voxelBoundsMin [(- clip) (- clip) (- clip)]
-      :aoStepDist 0.075
+      :aoStepDist 0.05
       :eyePos (or eyepos [2 0 2])
-      :aoIter 10
-      :voxelSize 0.05
-      :normOffsets [[d (- d) (- d) 0] [(- d) (- d) d 0] [(- d) d (- d) 0] [d d d 0]]
+      :aoIter 5
+      :voxelSize 0.025
+      :normOffsets [[d -d -d 0] [-d -d d 0] [-d d -d 0] [d d d 0]]
       :frameBlend (/ 1.0 iter)
-      :groundY 1.1
-      :shadowIter 32
+      :groundY 1.05
+      :shadowIter 128
       :lightColor [50 50 50]
-      :targetPos [0 -0.124 0]
-      :maxIter 80
+      :targetPos (or targetpos [0 -0.15 0])
+      :maxIter 128
       :reflectIter 0
-      :dof 0.01
+      :dof (or dof 0.01)
       :exposure 3.5
       :minLightAtt 0.0
       :voxelBounds2 [2 2 2]
       :time t
-      :fogPow 1
+      :fogPow 0.05
       :voxelBoundsMax [clip clip clip]
       :lightScatter 0.2
       :invVoxelScale [0.5 0.5 0.5]
       :up [0 1 0]
       :voxelBounds [1 1 1]
-      :gamma 1.5}
+      :gamma (or gamma 1.5)}
      (get material-presets mat (material-presets :ao)))))
 
 (defn gyroid [s t p o]
@@ -208,7 +229,7 @@
 
 (defn make-option-buffers
   [n opts]
-  (let [t-opts (sg/lookup :TRenderOptions)]
+  (let [t-opts (sg/lookup :TRenderOpts)]
     (vec
      (for [i (range n)]
        (cl/as-clbuffer
@@ -217,7 +238,7 @@
 
 (defn update-option-buffers
   [buffers opts]
-  (let [t-opts (sg/lookup :TRenderOptions)]
+  (let [t-opts (sg/lookup :TRenderOpts)]
     (vec
      (for [i (range (count buffers))
            :let [b (get buffers i)]]
@@ -227,12 +248,18 @@
          (cl/rewind b))))))
 
 (defn init-renderer
-  [{:keys [width height vres iter] :as args}]
-  (let [cl-state (cl/init-state :device :cpu :program [(clu/resource-stream cl-program) :fast-math :enable-mad])]
+  [{:keys [width height vres iter vname] :as args}]
+  (let [pl (first (cl/available-platforms))
+        dev (cl/max-device pl)
+        ctx (cl/make-context [dev])
+        cl-state (cl/init-state
+                  :platform pl
+                  :context ctx
+                  :device dev
+                  :program [(clu/resource-stream cl-program) :fast-math :enable-mad])]
     (cl/with-state cl-state
-      (println "build log: ")
-      (println :cpu "-------------------" (cl/build-log (:program cl-state) (cl/max-device (:ctx cl-state) :cpu)))
-      ;;(println :gpu "-------------------" (cl/build-log (:program cl-state) (cl/max-device (:ctx cl-state) :gpu)))
+      (println "build log:\n-------------------")
+      (println (cl/build-log))
       (let [num (* width height)
             state (time
                    (merge
@@ -251,19 +278,23 @@
                                         ;:usage :readonly}
                      )
                     ;;{:v-buf (load-volume "gyroid-512.vox")}
-                    {:v-buf (load-volume "gyroid-sliced-512-s0.01.vox")}
+                    {:v-buf (load-volume (or vname "gyroid-sliced-512-s0.01.vox"))}
                     ;;{:v-buf (load-volume "terrain-512-solid.vox")}
                     ))]
         (assoc state :pipeline (make-pipeline state))))))
 
 (defn test-render
-  [width height iter res mat]
+  [& {:keys [width height iter vres mat vname out-path theta dist]
+      :or {width 640 height 360 iter 1 vres 256 mat :metal out-path "foo.png"
+           theta 135 dist 2.25}}]
   (let [state (init-renderer {:width width :height height
-                              :vres [res res res]
+                              :vres [vres vres vres]
                               :iter iter
-                              :eyepos (compute-eyepos (* 1.7 45) 0.66 0.5)
-                              ;;:eyepos (compute-eyepos (* 3 45) 2.25 0.25)
-                              :mat mat})]
+                              ;;:eyepos (compute-eyepos (* 1.7 45) 0.66 0.5)
+                              :eyepos (compute-eyepos theta dist 0.35)
+                              :targetpos [0 -0.4 0]
+                              :mat mat
+                              :vname vname})]
     (cl/with-state (:cl-state state)
       (let [argb (time (ops/execute-pipeline (:pipeline state) :verbose false :final-size (:num state)))
             img (pix/make-image width height)
@@ -276,20 +307,29 @@
               (aset-int img-pix i (first cols))
               (recur (rest cols) (inc i)))))
         (pix/set-pixels img img-pix)
-        (pix/save-png img "foo.png")))))
+        (pix/save-png img out-path)))))
 
 (defn test-anim
-  [width height iter res mat]
-  (let [args {:width width :height height :vres [res res res] :iter iter :mat mat}
+  [width height iter res mat & vname]
+  (let [args {:width width :height height :vres [res res res]
+              :iter iter
+              :mat mat
+              :vname (first vname)}
         img (pix/make-image width height)
         img-pix (pix/get-pixels img)
         state (init-renderer args)]
     (cl/with-state (:cl-state state)
       (time
-       (doseq [frame (range 32)]
+       (doseq [frame (range 13 14)]
          (prn "rendering frame #" frame)
          (cl/rewind (:q-buf state))
-         (let [frame-args (assoc args :eyepos (compute-eyepos (* frame 12.125) 2.25 0.25))
+         (let [t (m/map-interval frame 0 35 0.0 1.0)
+               theta (m/map-interval t 0 1 0 350)
+               r (m/map-interval t 0 1 2.25 2.25)
+               y (m/map-interval t 0 1 0.44 0.45)
+               ty (m/map-interval t 0 1 -0.15 -0.15)
+               fov (m/map-interval t 0 1 2 2)
+               frame-args (assoc args :fov fov :targetpos [0 ty 0] :eyepos (compute-eyepos theta r y))
                _ (update-option-buffers (:o-buffers state) frame-args)
                argb (time (ops/execute-pipeline
                            (make-pipeline state)
@@ -304,14 +344,3 @@
            (pix/set-pixels img img-pix)
            (pix/save-png img (format "anim/foo-%03d.png" frame)))))
       (cl/release (:ctx (:cl-state state))))))
-
-(defn trilin
-  [v000 v001 v010 v011 v100 v101 v110 v111 fx fy fz]
-  (let [mix #(+ % (* (- %2 %) %3))
-        vx (mix v000 v100 fx)
-        vy (mix v001 v101 fx)
-        vz (mix v010 v110 fx)
-        vw (mix v011 v111 fx)
-        i1 (mix vx vz fy)
-        i2 (mix vy vw fy)]
-    (mix i1 i2 fz)))

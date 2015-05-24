@@ -77,9 +77,69 @@ typedef struct {
   float4 lightPos[4];
   float4 lightColor[4];
   TMaterial materials[4];
-} TRenderOptions;
+} TRenderOpts;
 
 __constant float INV8BIT = 1.0f / 255.0f;
+
+float4 randFloat4(__global const float4* mcSamples, uint seed);
+float4 distUnion(const float4 v1, const float4 v2);
+float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const float3 dir);
+uchar voxelLookup(__global const uchar* voxels, __private const TRenderOpts* opts, const float3 p);
+float voxelLookupI(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q);
+float3 voxelNormal(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q);
+float3 voxelNormalSmooth(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q);
+float voxelMaterial(__private const TRenderOpts* opts, const uchar v);
+float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpts* opts, TIsec* isec,
+                       const float3 rpos, const float3 dir, int steps);
+void raymarch(__global const uchar* voxels,
+              __private const TRenderOpts* opts,
+              const TRay* ray, TIsec* result, const float maxDist, int maxSteps);
+__private const TMaterial* objectMaterial(__private const TRenderOpts* opts, const int objectID);
+float3 skyGradient(__private const TRenderOpts* opts, const float3 dir);
+float3 lightPos(__global const float4* mcSamples,
+                __private const TRenderOpts* opts,
+                __private const TRenderState* state,
+                const int i);
+float3 reflect(const float3 v, const float3 n);
+float3 applyAtmosphere(__global const float4* mcSamples,
+                       __private const TRenderOpts* opts,
+                       __private const TRenderState* state,
+                       const TRay* ray, const TIsec* isec, float3 col);
+float shadow(__global const uchar* voxels,
+             __private const TRenderOpts* opts,
+             const float3 p, const float3 ldir, const float ldist);
+float schlick(const float r0, const float smooth, const float3 normal, const float3 view);
+float diffuseIntensity(const float3 ldir, const float3 normal);
+float blinnPhongIntensity(const float smooth, const TRay* ray,
+                          const float3 lightDir, const float3 normal);
+float ambientOcclusion(__global const uchar* voxels,
+                       __global const float4* mcSamples,
+                       __private const TRenderOpts* opts,
+                       const float3 pos, const float3 normal);
+float3 objectLighting(__global const uchar* voxels,
+                      __global const float4* mcSamples,
+                      __private const TRenderOpts* opts,
+                      __private const TRenderState* state,
+                      __private const TRay* ray,
+                      __private TIsec* isec,
+                      __private const TMaterial* mat,
+                      const float3 normal, const float3 reflectCol);
+float3 basicSceneColor(__global const uchar* voxels,
+                       __global const float4* mcSamples,
+                       const TRenderOpts* opts,
+                       const TRenderState* state,
+                       const TRay* ray, TIsec* isec);
+float3 sceneColor(__global const uchar* voxels,
+                  __global const float4* mcSamples,
+                  const TRenderOpts* opts,
+                  const TRenderState* state, const TRay* ray);
+float3 gamma(const float3 col);
+float3 tonemap(const float3 col, const float g);
+TRay cameraRayLookat(const TRenderOpts* opts, const TRenderState* state);
+TRenderState initRenderState(const TRenderOpts* opts,
+                             __global const float4* mcSamples, const int id);
+
+/* ---- implementation ---- */
 
 float4 randFloat4(__global const float4* mcSamples, uint seed) {
   return mcSamples[seed & 0x3fff];
@@ -90,27 +150,27 @@ float4 distUnion(const float4 v1, const float4 v2) {
 }
 
 /*
-float trilinear(float n000, float n001, float n010, float n011,
-                float n100, float n101, float n110, float n111,
-                float fx, float fy, float fz) {
+  float trilinear(float n000, float n001, float n010, float n011,
+  float n100, float n101, float n110, float n111,
+  float fx, float fy, float fz) {
   float nx = mix(n000, n100, fx);
   float ny = mix(n001, n101, fx);
   float nz = mix(n010, n110, fx);
   float nw = mix(n011, n111, fx);
   return mix(mix(nx, nz, fy), mix(ny, nw, fy), fz);
-}
+  }
 
-float3 barycentricPointInTriangle(const float3 a, const float3 b, const float3 c, const float3 p) {
+  float3 barycentricPointInTriangle(const float3 a, const float3 b, const float3 c, const float3 p) {
   return a * p.x + b * p.y + c * p.z;
-}
+  }
 
-float3 randomPointInTriangle(const float3 a, const float3 b, const float3 c, float4 r) {
+  float3 randomPointInTriangle(const float3 a, const float3 b, const float3 c, float4 r) {
   r = fabs(r);
   float my = 1.0f - r.x;
   while(r.y > my) r.y *= 0.7317f;
   r.z = 1.0f - (r.x + r.y);
   return barycentricPointInTriangle(a, b, c, r.xyz);
-}
+  }
 */
 
 /**
@@ -126,35 +186,26 @@ float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const 
   return b > a ? a : -1.0f;
 }
 /*
-bool triangleContainsPoint(const float3 a, const float3 b, const float3 c,
-                           const float3 p) {
+  bool triangleContainsPoint(const float3 a, const float3 b, const float3 c,
+  const float3 p) {
   return false; // TODO
-}
+  }
 
-float intersectsTriangle(const float3 a, const float3 b, const float3 c,
-                         const float3 p, const float3 dir) {
+  float intersectsTriangle(const float3 a, const float3 b, const float3 c,
+  const float3 p, const float3 dir) {
   float3 n = normalize(cross(b - a, c - a));
   float nd = dot(n, dir);
   float t = -dot(n, p - a) / nd;
   if (t >= 1e-3f) {
-    float3 ip = p + dir * t;
-    if (triangleContainsPoint(a, b, c, ip)) {
-      return t;
-    }
+  float3 ip = p + dir * t;
+  if (triangleContainsPoint(a, b, c, ip)) {
+  return t;
+  }
   }
   return -1.0f;
-}
-*/
-uchar voxelDataAt(__global const uchar* voxels, const int3 res, const int3 p) {
-  if (p.x >= 0 && p.x < res.x && p.y >= 0 && p.y < res.y && p.z >= 0 && p.z < res.z) {
-    return voxels[p.z * res.x * res.y + p.y * res.x + p.x];
   }
-  return 0;
-}
-
-uchar voxelLookup(__global const uchar* voxels, __private const TRenderOptions* opts, const float3 p) {
-  //const int3 pv = (int3)(p.x * opts->voxelRes.x, p.y * opts->voxelRes.y, p.z * opts->voxelRes.z);
-  //return voxelDataAt(voxels, opts->voxelRes, pv);
+*/
+uchar voxelLookup(__global const uchar* voxels, __private const TRenderOpts* opts, const float3 p) {
   const int4 res = opts->voxelRes;
   const int3 q = (int3)(p.x * res.x, p.y * res.y, p.z * res.z);
   if (q.x >= 0 && q.x < res.x && q.y >= 0 && q.y < res.y && q.z >= 0 && q.z < res.z) {
@@ -163,12 +214,55 @@ uchar voxelLookup(__global const uchar* voxels, __private const TRenderOptions* 
   return 0;
 }
 
+float voxelLookupI(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q) {
+  const int4 res = opts->voxelRes;
+  if (q.x >= 0 && q.x < res.x && q.y >= 0 && q.y < res.y && q.z >= 0 && q.z < res.z) {
+    return step((float)(opts->isoVal), (float)(voxels[q.z * res.w + q.y * res.x + q.x]));
+  }
+  return 0.0f;
+}
+
+float3 voxelNormal(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q) {
+  float nx = voxelLookupI(voxels, opts, (int3)(q.x + 1, q.y, q.z))
+    - voxelLookupI(voxels, opts, (int3)(q.x - 1, q.y, q.z));
+  float ny = voxelLookupI(voxels, opts, (int3)(q.x, q.y + 1, q.z))
+    - voxelLookupI(voxels, opts, (int3)(q.x, q.y - 1, q.z));
+  float nz = voxelLookupI(voxels, opts, (int3)(q.x, q.y, q.z + 1))
+    - voxelLookupI(voxels, opts, (int3)(q.x, q.y, q.z - 1));
+  //return -normalize((float3)(nx, ny, nz));
+  return -(float3)(nx, ny, nz);
+}
+
+float3 voxelNormalSmooth(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q) {
+  //float3 n = voxelNormal(voxels, opts, q);
+  float3 n = (float3)(0);
+  for(char z = -1; z <= 1; z++) {
+    for(char y = -1; y <= 1; y++) {
+      for(char x = -1; x <= 1; x++) {
+        int3 qq = (int3)(q.x - x, q.y + y, q.z + z);
+        if (voxelLookupI(voxels, opts, qq) > 0.0f) {
+          n += voxelNormal(voxels, opts, qq);
+        }
+      }
+    }
+  }
+  /*
+    n += voxelNormal(voxels, opts, (int3)(q.x - 1, q.y, q.z));
+    n += voxelNormal(voxels, opts, (int3)(q.x + 1, q.y, q.z));
+    n += voxelNormal(voxels, opts, (int3)(q.x, q.y - 1, q.z));
+    n += voxelNormal(voxels, opts, (int3)(q.x, q.y + 1, q.z));
+    n += voxelNormal(voxels, opts, (int3)(q.x, q.y, q.z - 1));
+    n += voxelNormal(voxels, opts, (int3)(q.x, q.y, q.z + 1));
+  */
+  return normalize(n);
+}
+
 /*
   float voxelDataAt(__global const uchar* voxels, const int3 res, const int3 p) {
   return voxels[p.z * res.x * res.y + p.y * res.x + p.x];
   }
 
-  float voxelLookup(__global const uchar* voxels, __global const TRenderOptions* opts, const float3 p) {
+  float voxelLookup(__global const uchar* voxels, __global const TRenderOpts* opts, const float3 p) {
   int3 res = opts->voxelRes;
   float3 pv = (float3)(p.x * res.x, p.y * res.y, p.z * res.z);
   int3 pi = (int3)(pv.x, pv.y, pv.z);
@@ -189,13 +283,14 @@ uchar voxelLookup(__global const uchar* voxels, __private const TRenderOptions* 
   }
 */
 
-float voxelMaterial(__private const TRenderOptions* opts, const uchar v) {
+float voxelMaterial(__private const TRenderOpts* opts, const uchar v) {
   return (v < 168 ? (v < 84 ? 1.0f : 2.0f) : 3.0f);
 }
 
-float4 distanceToScene(__global const uchar* voxels, __private const TRenderOptions* opts,
+float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpts* opts, TIsec* isec,
                        const float3 rpos, const float3 dir, int steps) {
   float4 res = distUnion((float4)(rpos.y + opts->groundY, 0.0, rpos.xz), (float4)(1e5f, -1.0f, 0.0f, 0.0f));
+  isec->normal = (res.x < 1e5) ? (float3)(0.0f, 1.0f, 0.0f) : -dir;
   const float idist = intersectsBox(opts->voxelBoundsMin, opts->voxelBoundsMax, rpos, dir);
   if (idist >= 0.0f && idist < res.x) {
     float3 delta = dir / (steps * 0.5f) * opts->invVoxelScale;
@@ -205,18 +300,22 @@ float4 distanceToScene(__global const uchar* voxels, __private const TRenderOpti
     while(--steps >= 0) {
       const uchar v = voxelLookup(voxels, opts, p);
       if (v > opts->isoVal) {
+        const int4 vres = opts->voxelRes;
+        const int3 q = (int3)(p.x * vres.x, p.y * vres.y, p.z * vres.z);
+        isec->normal = voxelNormalSmooth(voxels, opts, q);
         return distUnion((float4)(length(rpos - fma(p, opts->voxelBounds2, -opts->voxelBounds)) - opts->voxelSize,
                                   voxelMaterial(opts, v), 0.0f, 0.0f), res);
+        //return distUnion((float4)(0, voxelMaterial(opts, v), 0.0f, 0.0f), res);
       }
       p += delta;
     }
   }
   return res;
 }
-
-float3 sceneNormal(__global const uchar* voxels,
-                   __private const TRenderOptions* opts,
-                   const float3 p, const float3 dir) {
+/*
+  float3 sceneNormal(__global const uchar* voxels,
+  __private const TRenderOpts* opts,
+  const float3 p, const float3 dir) {
   float3 n1 = opts->normOffsets[0].xyz;
   float3 n2 = opts->normOffsets[1].xyz;
   float3 n3 = opts->normOffsets[2].xyz;
@@ -226,15 +325,15 @@ float3 sceneNormal(__global const uchar* voxels,
   n3 *= distanceToScene(voxels, opts, p + n3, dir, opts->maxVoxelIter).x;
   n4 *= distanceToScene(voxels, opts, p + n4, dir, opts->maxVoxelIter).x;
   return normalize(n1 + n2 + n3 + n4);
-}
-
+  }
+*/
 void raymarch(__global const uchar* voxels,
-              __private const TRenderOptions* opts,
+              __private const TRenderOpts* opts,
               const TRay* ray, TIsec* result, const float maxDist, int maxSteps) {
   result->distance = opts->startDist;
   while(--maxSteps >= 0) {
     result->pos = ray->pos + ray->dir * result->distance;
-    const float4 sceneDist = distanceToScene(voxels, opts, result->pos, ray->dir, opts->maxVoxelIter);
+    const float4 sceneDist = distanceToScene(voxels, opts, result, result->pos, ray->dir, opts->maxVoxelIter);
     result->objectID = (int)(sceneDist.y);
     if(fabs(sceneDist.x) <= opts->eps || result->distance >= maxDist) {
       break;
@@ -248,16 +347,17 @@ void raymarch(__global const uchar* voxels,
   }
 }
 
-__private const TMaterial* objectMaterial(__private const TRenderOptions* opts, const int objectID) {
+__private const TMaterial* objectMaterial(__private const TRenderOpts* opts, const int objectID) {
   return &opts->materials[objectID];
 }
 
-float3 skyGradient(__private const TRenderOptions* opts, const float3 dir) {
-  return mad(opts->skyColor2 - opts->skyColor1, (float3)(dir.y * 0.5f + 0.5f), opts->skyColor1);
+float3 skyGradient(__private const TRenderOpts* opts, const float3 dir) {
+  return mix(opts->skyColor1, opts->skyColor2, (float3)(dir.y * 0.5f + 0.5f));
+  //return mad(opts->skyColor2 - opts->skyColor1, (float3)(dir.y * 0.5f + 0.5f), opts->skyColor1);
 }
 
 float3 lightPos(__global const float4* mcSamples,
-                __private const TRenderOptions* opts,
+                __private const TRenderOpts* opts,
                 __private const TRenderState* state,
                 const int i) {
   uint seed = (uint)(state->pixelPos.x * 1957.0f + state->pixelPos.y * 2173.0f + opts->time * 4763.742f);
@@ -269,10 +369,11 @@ float3 reflect(const float3 v, const float3 n){
 }
 
 float3 applyAtmosphere(__global const float4* mcSamples,
-                       __private const TRenderOptions* opts,
+                       __private const TRenderOpts* opts,
                        __private const TRenderState* state,
                        const TRay* ray, const TIsec* isec, float3 col) {
-  const float3 fa = (float3)(pow(min(isec->distance / opts->maxDist, 1.0f), opts->fogPow));
+  const float3 fa = (float3)(1.0f - exp(isec->distance * isec->distance * -opts->fogPow));
+  //const float3 fc = skyGradient(opts, ray->dir);
   col = mad(skyGradient(opts, ray->dir) - col, fa, col);
   for(uchar i=0; i < opts->numLights; i++) {
     float3 lp = lightPos(mcSamples, opts, state, i);
@@ -284,14 +385,15 @@ float3 applyAtmosphere(__global const float4* mcSamples,
 }
 
 float shadow(__global const uchar* voxels,
-             __private const TRenderOptions* opts,
+             __private const TRenderOpts* opts,
              const float3 p, const float3 ldir, const float ldist) {
   TRay shadowRay;
   shadowRay.pos = p;
   shadowRay.dir = ldir;
   TIsec shadowIsec;
   raymarch(voxels, opts, &shadowRay, &shadowIsec, ldist, opts->shadowIter);
-  return shadowIsec.distance > 0.0f ? step(ldist, shadowIsec.distance) : 0.0f;
+  //return shadowIsec.distance > 0.0f ? step(ldist, shadowIsec.distance) : 0.0f;
+  return step(ldist, shadowIsec.distance);
 }
 
 // http://en.wikipedia.org/wiki/Schlick's_approximation
@@ -317,19 +419,19 @@ float blinnPhongIntensity(const float smooth, const TRay* ray,
 
 float ambientOcclusion(__global const uchar* voxels,
                        __global const float4* mcSamples,
-                       __private const TRenderOptions* opts,
+                       __private const TRenderOpts* opts,
                        const float3 pos, const float3 normal) {
   float ao = 1.0f;
   float3 d = (float3)(0.0f);
   uint seed = (uint)(pos.x * 3183.75f + pos.y * 1831.42f + pos.z * 2945.87f + opts->time * 2671.918f);
   const float3 scatter = (float3)(0.2f);
   const float3 ad = (float3)(opts->aoStepDist);
+  TIsec isec;
   for(int i = 0; i <= opts->aoIter && ao > 0.01; i++) {
     d += ad;
     seed += 37;
     const float3 n = normalize(mad(randFloat4(mcSamples, seed).xyz, scatter, normal));
-    const float4 sceneDist = distanceToScene(voxels, opts, mad(n, d, pos), n, opts->maxVoxelIter);
-    //ao *= 1.0f - clamp((d - sceneDist.x) * opts->aoAmp / d, 0.0f, opts->aoMaxAmp);
+    const float4 sceneDist = distanceToScene(voxels, opts, &isec, mad(n, d, pos), n, opts->maxVoxelIter);
     ao *= 1.0f - max((d.x - sceneDist.x) * opts->aoAmp / d.x, 0.0f);
   }
   return ao;
@@ -337,7 +439,7 @@ float ambientOcclusion(__global const uchar* voxels,
 
 float3 objectLighting(__global const uchar* voxels,
                       __global const float4* mcSamples,
-                      __private const TRenderOptions* opts,
+                      __private const TRenderOpts* opts,
                       __private const TRenderState* state,
                       __private const TRay* ray,
                       __private TIsec* isec,
@@ -371,7 +473,7 @@ float3 objectLighting(__global const uchar* voxels,
 
 float3 basicSceneColor(__global const uchar* voxels,
                        __global const float4* mcSamples,
-                       const TRenderOptions* opts,
+                       const TRenderOpts* opts,
                        const TRenderState* state,
                        const TRay* ray, TIsec* isec) {
   raymarch(voxels, opts, ray, isec, opts->maxDist, opts->maxIter);
@@ -380,8 +482,13 @@ float3 basicSceneColor(__global const uchar* voxels,
     sceneCol = skyGradient(opts, ray->dir);
   } else {
     const TMaterial* mat = objectMaterial(opts, isec->objectID);
-    isec->normal = sceneNormal(voxels, opts, isec->pos, ray->dir);
-    sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, isec, mat, isec->normal,
+    TMaterial m2 = *mat;
+    //isec->normal = sceneNormal(voxels, opts, isec->pos, ray->dir);
+    //if (isec->objectID > 0) {
+      //m2.albedo = (float4)(isec->pos + 1.0f, 0.0f);
+      //m2.albedo = (float4)(fma(isec->normal.zyx, 2.0, 2.0f), 0.0f);
+    //}
+    sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, isec, &m2, isec->normal,
                               skyGradient(opts, reflect(ray->dir, isec->normal)));
   }
   return applyAtmosphere(mcSamples, opts, state, ray, isec, sceneCol);
@@ -389,7 +496,7 @@ float3 basicSceneColor(__global const uchar* voxels,
 
 float3 sceneColor(__global const uchar* voxels,
                   __global const float4* mcSamples,
-                  const TRenderOptions* opts,
+                  const TRenderOpts* opts,
                   const TRenderState* state, const TRay* ray) {
   TIsec isec;
   raymarch(voxels, opts, ray, &isec, opts->maxDist, opts->maxIter);
@@ -398,29 +505,33 @@ float3 sceneColor(__global const uchar* voxels,
     sceneCol = skyGradient(opts, ray->dir);
   } else {
     const TMaterial* mat = objectMaterial(opts, isec.objectID);
-    float3 norm = mad(state->mcNormal, 1.0f / (5.0f + mat->smoothness * 200.0f),
-                      sceneNormal(voxels, opts, isec.pos, ray->dir));
+    TMaterial m2 = *mat;
+    //float3 norm = mad(state->mcNormal, 1.0f / (5.0f + mat->smoothness * 200.0f),
+    //                  sceneNormal(voxels, opts, isec.pos,
+    //                  ray->dir));
+    float3 norm = mad(state->mcNormal, 1.0f / (5.0f + mat->smoothness * 200.0f), isec.normal);
     float3 reflectCol = (float3)(1.0f);
+    //if (isec.objectID > 0) {
+      //m2.albedo = (float4)(isec.pos + 1.0f, 0.0);
+      //m2.albedo = (float4)(fma(norm.zyx, 2.0f, 2.0f), 0.0f);
+    //}
     if (mat->r0 > 0.0f && opts->reflectIter > 0) {
       TIsec rIsec;
       rIsec.pos = isec.pos;
       rIsec.normal = norm;
       TRay reflectRay;
       reflectRay.dir = ray->dir;
-      float j = 0;
       for(int i = 0; i < opts->reflectIter; i++) {
         reflectRay.dir = reflect(reflectRay.dir, rIsec.normal);
         reflectRay.pos = rIsec.pos + reflectRay.dir * 0.0075f;
-        reflectCol *= basicSceneColor(voxels, mcSamples, opts, state, &reflectRay, &rIsec);
-        //j++;
+        reflectCol += basicSceneColor(voxels, mcSamples, opts, state, &reflectRay, &rIsec);
         if (rIsec.objectID < 0) break;
         if (objectMaterial(opts, rIsec.objectID)->r0 < 0.001) break;
       }
-      //reflectCol /= j;
     } else {
       reflectCol = skyGradient(opts, reflect(ray->dir, norm));
     }
-    sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, &isec, mat, norm, reflectCol);
+    sceneCol = objectLighting(voxels, mcSamples, opts, state, ray, &isec, &m2, norm, reflectCol);
   }
   sceneCol = applyAtmosphere(mcSamples, opts, state, ray, &isec, sceneCol);
   return sceneCol;
@@ -434,7 +545,7 @@ float3 tonemap(const float3 col, const float g) {
   return gamma(col / (g + col));
 }
 
-TRay cameraRayLookat(const TRenderOptions* opts, const TRenderState* state) {
+TRay cameraRayLookat(const TRenderOpts* opts, const TRenderState* state) {
   float3 forward = normalize(opts->targetPos - state->eyePos);
   float3 right = normalize(cross(forward, opts->up));
   float2 viewCoord = state->pixelPos / (float2)(opts->resolution.x, opts->resolution.y) * opts->fov - opts->fov * 0.5f;
@@ -445,7 +556,7 @@ TRay cameraRayLookat(const TRenderOptions* opts, const TRenderState* state) {
   return ray;
 }
 
-TRenderState initRenderState(const TRenderOptions* opts,
+TRenderState initRenderState(const TRenderOpts* opts,
                              __global const float4* mcSamples, const int id) {
   float2 p = (float2)(id % opts->resolution.x, id / opts->resolution.x);
   TRenderState state;
@@ -458,25 +569,25 @@ TRenderState initRenderState(const TRenderOptions* opts,
 
 __kernel void RenderImage(__global const uchar* voxels,
                           __global const float4* mcSamples,
-                          __global const TRenderOptions* g_opts,
+                          __global const TRenderOpts* g_opts,
                           __global float4* pixels,
                           const int n) {
   const int id = get_global_id(0);
   if (id < n) {
-    __private TRenderOptions opts;
+    __private TRenderOpts opts;
     __private TRenderState state;
     __private TRay ray;
     opts = *g_opts;
     state = initRenderState(&opts, mcSamples, id);
     ray = cameraRayLookat(&opts, &state);
     const float3 sceneCol = sceneColor(voxels, mcSamples, &opts, &state, &ray) * opts.exposure;
-    const float3 prevCol = pixels[id].xyz;
+    const float3 prevCol = pixels[id].xyz + (state.mcPos.xyz - 0.4f) * INV8BIT;
     pixels[id] = (float4)(mad(sceneCol - prevCol, (float3)(opts.frameBlend), prevCol), 1.0f);
   }
 }
 
 __kernel void TonemapImage(__global const float4* pixels,
-                           __global TRenderOptions* opts,
+                           __global TRenderOpts* opts,
                            __global uint* rgba,
                            const int n) {
   int id = get_global_id(0);
