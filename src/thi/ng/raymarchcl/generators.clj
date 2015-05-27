@@ -29,14 +29,15 @@
   (prn "volume " rx ry rz)
   (let [voxels (byte-array (* rx ry rz))
         rxy    (* rx ry)
-        offset (vec3 0.3875 0.0 0.0)]
+        offset (vec3 0.3875 0.0 0.0)
+        scl    (* 0.01 (/ 512 rx))]
     (doseq [z (range rz) y (range ry) x (range rx)]
       (when (>= (bit-and z 0x3f) 32)
-        (let [v (gyroid 0.01 1.0 (vec3 x y z) offset)
+        (let [v (gyroid scl 1.0 (vec3 x y z) offset)
               idx (mm/madd z rxy y rx x)]
           (when (and (zero? x) (zero? y)) (prn z))
           (if (< (m/abs (- 0.2 v)) 0.05)
-            (if (< (bit-and x 0x3f) 32) (aset-byte voxels idx 64) (aset-byte voxels idx 0))
+            (if (< (bit-and x 0x3f) 32) (aset-byte voxels idx 64) (aset-byte voxels idx -128))
             (when (> v 0.35) (aset-byte voxels idx -1))))))
     voxels))
 
