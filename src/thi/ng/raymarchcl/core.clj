@@ -25,16 +25,11 @@
 (sg/reset-registry!)
 (sg/register! (sp/parse-specs (slurp (clu/resource-stream cl-program))))
 
-(defn compute-eyepos
-  [theta dist y]
-  (g/rotate-y (vec3 0 y dist) (m/radians theta)))
-
 (defn render-options
-  [{:keys [width height vres t iter eyepos mat fov dof targetpos gamma groundY] :as opts}]
+  [{:keys [width height vres t iter eyepos mat fov dof targetpos gamma groundY voxelSize] :as opts}]
   (let [eps  0.005
         clip 0.99
         vres (if (number? vres) [vres vres vres] vres)]
-    (prn opts)
     (merge
      {:aoAmp 0.2
       :aoIter 5
@@ -55,7 +50,7 @@
       :lightColor [50 50 50]
       :lightPos [[-2 0 -2 0] [2 0 2 0]]
       :lightScatter 0.2
-      :maxDist 20
+      :maxDist 30
       :maxIter 128
       :maxVoxelIter 192
       :minLightAtt 0.0
@@ -75,7 +70,7 @@
       :voxelBoundsMax [clip clip clip]
       :voxelBoundsMin [(- clip) (- clip) (- clip)]
       :voxelRes (conj vres (* (vres 0) (vres 1)))
-      :voxelSize (/ (first vres))}
+      :voxelSize (or voxelSize (/ (first vres)))}
      (get materials/presets mat (materials/presets :ao)))))
 
 (defn make-pipeline
@@ -144,13 +139,17 @@
                      :num          num}
                     (ops/init-buffers
                      1 1
-                     ;;:v-buf {:wrap (make-gyroid-volume args) :type :byte :usage :readonly}
+                     ;;:v-buf {:wrap (gen/make-gyroid-volume args) :type :byte :usage :readonly}
                      ;;:v-buf {:wrap (make-terrain args) :type :byte :usage :readonly}
                      :p-buf {:size (* num 4) :type :float :usage :readwrite}
                      :q-buf {:size num :type :int :usage :writeonly})
                     {:v-buf (vio/load-volume (or vname "gyroid-sliced-512-s0.01.vox"))}
                     ))]
         (assoc state :pipeline (make-pipeline state))))))
+
+(defn compute-eyepos
+  [theta dist y]
+  (g/rotate-y (vec3 0 y dist) (m/radians theta)))
 
 (defn test-render
   [& {:keys [width height iter vres mat vname out-path theta dist]

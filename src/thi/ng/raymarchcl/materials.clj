@@ -29,9 +29,9 @@
                   {:albedo [1.9 1.9 1.9 1.0]
                    :r0 0.1
                    :smoothness 0.5}
-                  {:albedo [0.9 0.9 0.9 1.0]
-                   :r0 0.75
-                   :smoothness 0.2}
+                  {:albedo [0.25 0.27 0.5 1.0]
+                   :r0 0.7
+                   :smoothness 0.1}
                   {:albedo [1.0 1.0 1.0 1.0]
                    :r0 0.2
                    :smoothness 0.1}]
@@ -41,7 +41,7 @@
 
    :metal2
    {:lightColor  [[28 18 8 0] [8 18 28 0]]
-    :lightPos    [[-2 0 2 0] [2 0 2 0]]
+    :lightPos    [[-2 0 -2 0] [2 0 2 0]]
     :materials   [{:albedo [0.0 0.0 0.0 1.0]
                    :r0 0.1
                    :smoothness 0.9}
