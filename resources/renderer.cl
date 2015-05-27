@@ -83,7 +83,7 @@ __constant int3 ONE = (int3)(1,0,-1);
 float4 randFloat4(__global const float4* mcSamples, uint seed);
 float2 distUnion(const float2 v1, const float2 v2);
 float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const float3 dir);
-uchar voxelLookup(__global const uchar* voxels, __private const TRenderOpts* opts, const float3 p);
+int voxelLookup(__global const uchar* voxels, __private const TRenderOpts* opts, const float3 p);
 float voxelLookupI(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q);
 float3 voxelNormal(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q);
 float3 voxelNormalSmooth(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q);
@@ -160,13 +160,13 @@ float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const 
   return b > a ? a : -1.0f;
 }
 
-uchar voxelLookup(__global const uchar* voxels, __private const TRenderOpts* opts, const float3 p) {
+int voxelLookup(__global const uchar* voxels, __private const TRenderOpts* opts, const float3 p) {
   const int4 res = opts->voxelRes;
   const int3 q = (int3)(p * res.xyz);
   if (q.z >= 0 && q.z < res.z && q.y >= 0 && q.y < res.y && q.x >= 0 && q.x < res.x) {
-    return voxels[q.z * res.w + q.y * res.x + q.x];
+    return (int)voxels[q.z * res.w + q.y * res.x + q.x];
   }
-  return 0;
+  return -1;
 }
 
 float voxelLookupI(__global const uchar* voxels, __private const TRenderOpts* opts, const int3 q) {
@@ -217,7 +217,8 @@ float2 distanceToScene(__global const uchar* voxels, __private const TRenderOpts
     if (idist > 0.0f) p = mad(dir, (float3)idist, p);
     p *= opts->invVoxelScale;
     while(--steps >= 0) {
-      const uchar v = voxelLookup(voxels, opts, p);
+      const int v = voxelLookup(voxels, opts, p);
+      if (v < 0) break;
       if (v > opts->isoVal) {
         const int4 vres = opts->voxelRes;
         const int3 q = (int3)(p * vres.xyz);
@@ -338,7 +339,7 @@ float ambientOcclusion(__global const uchar* voxels,
     d += ad;
     seed += 37;
     const float3 n = normalize(mad(randFloat4(mcSamples, seed).xyz, scatter, normal));
-    const float2 sceneDist = distanceToScene(voxels, opts, &isec, mad(n, d, pos), n, opts->maxVoxelIter / 4, false);
+    const float2 sceneDist = distanceToScene(voxels, opts, &isec, mad(n, d, pos), n, opts->maxVoxelIter / 2, false);
     ao *= 1.0f - max((d.x - sceneDist.x) * opts->aoAmp / d.x, 0.0f);
   }
   return ao;
@@ -381,10 +382,10 @@ float3 objectLighting(__global const uchar* voxels,
 
 float3 basicSceneColor(__global const uchar* voxels,
                        __global const float4* mcSamples,
-                       const TRenderOpts* opts,
-                       const TRenderState* state,
-                       const TRay* ray,
-                       TIsec* isec) {
+                       __private const TRenderOpts* opts,
+                       __private const TRenderState* state,
+                       __private const TRay* ray,
+                       __private TIsec* isec) {
   raymarch(voxels, opts, ray, isec, opts->maxDist, opts->maxIter, false);
   float3 sceneCol;
   if(isec->objectID < 0) {
@@ -405,9 +406,9 @@ float3 basicSceneColor(__global const uchar* voxels,
 
 float3 sceneColor(__global const uchar* voxels,
                   __global const float4* mcSamples,
-                  const TRenderOpts* opts,
-                  const TRenderState* state,
-                  const TRay* ray) {
+                  __private const TRenderOpts* opts,
+                  __private const TRenderState* state,
+                  __private const TRay* ray) {
   TIsec isec;
   raymarch(voxels, opts, ray, &isec, opts->maxDist, opts->maxIter, true);
   float3 sceneCol;
@@ -417,7 +418,7 @@ float3 sceneColor(__global const uchar* voxels,
     const TMaterial* mat = &opts->materials[isec.objectID];
     //TMaterial m2 = *mat;
     float3 norm = mad(state->mcNormal, 1.0f / mad(mat->smoothness, 200.0f, 5.0f), isec.normal);
-    float3 reflectCol = (float3)mat->r0;
+    float3 reflectCol = (float3)0.0f; //mat->r0;
     //if (isec.objectID > 0) {
     //m2.albedo = (float4)(isec.pos + 1.0f, 0.0);
     //m2.albedo = (float4)(mad(norm.zyx, 2.0f, 2.0f), 0.0f);
@@ -452,7 +453,7 @@ float3 tonemap(const float3 col, const float g) {
   return gamma(col / (g + col));
 }
 
-TRay cameraRayLookat(const TRenderOpts* opts, const TRenderState* state) {
+TRay cameraRayLookat(__private const TRenderOpts* opts, __private const TRenderState* state) {
   float3 forward = normalize(opts->targetPos - state->eyePos);
   float3 right = normalize(cross(forward, opts->up));
   float2 viewCoord = state->pixelPos / (float2)(opts->resolution.x, opts->resolution.y) * opts->fov - opts->fov * 0.5f;
@@ -463,7 +464,7 @@ TRay cameraRayLookat(const TRenderOpts* opts, const TRenderState* state) {
   return ray;
 }
 
-TRenderState initRenderState(const TRenderOpts* opts,
+TRenderState initRenderState(__private const TRenderOpts* opts,
                              __global const float4* mcSamples, const int id) {
   float2 p = (float2)(id % opts->resolution.x, id / opts->resolution.x);
   TRenderState state;
