@@ -9,7 +9,7 @@
   :dependencies [[org.clojure/clojure "1.7.0-beta3"]
                  [thi.ng/structgen "0.2.1"]
                  [thi.ng/simplecl "0.2.0"]
-                 [thi.ng/geom-core "0.0.803"]
+                 [thi.ng/geom "0.0.803"]
                  [thi.ng/math "0.1.0"]
                  [com.postspectacular/piksel "0.1.4"]]
   :jvm-opts ["-server" "-Xms1g" "-Xmx2g" "-XX:+AggressiveOpts"])
