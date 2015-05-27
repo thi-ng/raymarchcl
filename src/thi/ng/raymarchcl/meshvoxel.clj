@@ -1,8 +1,11 @@
-(ns raymarchcl.meshvoxel
+(ns thi.ng.raymarchcl.meshvoxel
   (:require
-   [raymarchcl.core :as rm]
-   [toxi.geom.core :as g]
-   [toxi.geom.meshio :as mio]
+   [thi.ng.raymarchcl.core :as rm]
+   [thi.ng.raymarchcl.io :as vio]
+   [thi.ng.geom.core :as g]
+   [thi.ng.geom.core.vector :as v :refer [vec3]]
+   [thi.ng.geom.core.utils :as gu]
+   [thi.ng.geom.mesh.io :as mio]
    [clojure.java.io :as io]
    [piksel.core :as pix]))
 
@@ -12,18 +15,18 @@
 
 (defn mesh-scale
   [vertices res]
-  (let [{p :p [sx sy sz] :size} (g/bounding-box* vertices)
-        md (max sx sy sz)
-        off (vec (map #(* 0.5 res (- 1.0 (/ % md))) [sx sy sz]))
-        s (g/vec3 (/ res md))]
+  (let [[p [sx sy sz]] (gu/bounding-box vertices)
+        md  (max sx sy sz)
+        off (vec3 (map #(* 0.5 res (- 1.0 (/ % md))) [sx sy sz]))
+        s   (vec3 (/ res md))]
     (prn :p p :s [sx sy sz] :off off :md md :scale s)
-    (fn [v] (g/add3 off (g/scale3 (g/sub3 v p) s)))))
+    (fn [v] (g/+ off (g/* (g/- v p) s)))))
 
 (defn voxelize-scatter
   [vertices res]
-  (let [voxels (byte-array (* res res res))
-        rxy (* res res)
-        r2 (/ res 2)
+  (let [voxels   (byte-array (* res res res))
+        rxy      (* res res)
+        r2       (/ res 2)
         scale-fn (mesh-scale vertices res)]
     (doseq [v vertices]
       (let [[x y z] (map int (scale-fn v))]
@@ -41,10 +44,10 @@
 
 (defn voxelize-ks
   [vertices res ks]
-  (let [voxels (byte-array (* res res res))
-        rxy (* res res)
+  (let [voxels   (byte-array (* res res res))
+        rxy      (* res res)
         scale-fn (mesh-scale vertices res)
-        ks1 (inc ks)]
+        ks1      (inc ks)]
     (doseq [v vertices]
       (let [[x y z] (map int (scale-fn v))]
         ;;(prn x y z)
@@ -56,8 +59,8 @@
 
 (defn voxelize
   [vertices res]
-  (let [voxels (byte-array (* res res res))
-        rxy (* res res)
+  (let [voxels   (byte-array (* res res res))
+        rxy      (* res res)
         scale-fn (mesh-scale vertices res)]
     (doseq [v vertices]
       (let [[x y z] (map int (scale-fn v))]
@@ -67,11 +70,11 @@
 
 (defn make-heatmap
   [path amp]
-  (let [img (pix/load-image path)
+  (let [img    (pix/load-image path)
         pixels (pix/get-pixels img)
-        res (.getWidth img)
+        res    (.getWidth img)
         voxels (byte-array (* res res res))
-        rxy (* res res)]
+        rxy    (* res res)]
     (doseq [y (range res) x (range res)]
       (let [c (bit-and (aget pixels (+ (* y res) x)) 255)
             h (if (pos? c) (if (> c 224) 2 (max 2 (* c amp))) 0)]
@@ -83,4 +86,4 @@
   [path out-path n]
   (doseq [i (range n)]
     (let [out (format out-path i)]
-      (rm/save-volume out 256 (make-heatmap path (float (/ i (* n 1.33333))))))))
+      (vio/save-volume out 256 (make-heatmap path (float (/ i (* n 1.33333))))))))
