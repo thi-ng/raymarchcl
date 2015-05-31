@@ -1,4 +1,4 @@
-(defproject raymarchcl "0.1.0"
+(defproject thi.ng/raymarchcl "0.1.0"
   :description  "Experiment w/ OpenCL voxel raymarching via Clojure"
   :url          "http://thi.ng/raymarchcl"
   :license      {:name "Apache Software License 2.0"
