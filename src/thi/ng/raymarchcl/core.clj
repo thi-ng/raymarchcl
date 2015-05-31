@@ -118,11 +118,11 @@
 
 (defn init-renderer
   [{:keys [width height vres iter vname] :as args}]
-  (let [pl (first (cl/available-platforms))
-        dev (cl/max-device pl)
-        ctx (cl/make-context [dev])
+  (let [platform (cl/select-platform)
+        dev      (cl/max-device platform)
+        ctx      (cl/make-context [dev])
         cl-state (cl/init-state
-                  :platform pl
+                  :platform platform
                   :context ctx
                   :device dev
                   :program [(clu/resource-stream cl-program) :fast-math :enable-mad])]

@@ -1,0 +1,91 @@
+* thi.ng/raymarchcl
+
+[[./assets/gyroid-metal75.jpg]]
+
+Experimental OpenCL voxel rendering/raymarching via Clojure REPL.
+
+** Usage
+
+#+BEGIN_SRC shell
+git clone git@github.com:thi-ng/raymarchcl.git
+cd raymarchcl
+lein repl
+#+END_SRC
+
+*** Prepare test voxel data
+
+#+BEGIN_SRC clojure
+(require '[thi.ng.raymarchcl.core :as rm])
+(require '[thi.ng.raymarchcl.generators :as gen])
+(require '[thi.ng.raymarchcl.io :as vio])
+
+;; generates a 134MB binary file in project root for later reference
+(vio/save-volume "gyroid-512.vox" 512 (gen/make-gyroid-volume {:vres [512 512 512]}))
+#+END_SRC
+
+*** Rendering from the REPL
+
+#+BEGIN_SRC clojure
+  (rm/test-render
+   :width 640 :height 360
+   :iter 1
+   :vres 512 :vname "gyroid-512.vox"
+   :mat :orange-stripes
+   :theta -45 :dist 2.25 :dof 1e-5
+   :out-path "out.jpg")
+#+END_SRC
+
+*Important note:* Increase the =:iter= count for better quality images!
+
+Material presets are defined in the [[./src/thi/ng/raymarchcl/materials.clj][materials namespace]], currently only:
+
+- =:orange-stripes=
+- =:metal=
+- =:metal2=
+- =:ao=
+
+Different voxel value bands are mapped to different materials within each preset.
+
+** Gallery of selected experiments
+
+*** Stanford Dragon
+
+[[./assets/dragon-refl16.jpg]]
+
+[[./assets/dragon2.jpg]] 
+
+*** Stanford bunny
+
+[[./assets/bunny-normsmooth-16spp-2.jpg]]
+
+*** Gyroid isosurface
+
+The next two images were rendered w/ 100 iteration to reduce DOF noise
+
+[[./assets/gyroid-100spp-2.jpg]]
+
+[[./assets/gyroid-100spp.jpg]]
+
+[[./assets/gyroid-2.jpg]]
+
+[[./assets/gyroid-25spp.jpg]]
+
+[[./assets/gyroid-dof-corner.jpg]]
+
+[[./assets/gyroid-dof0.025.jpg]]
+
+[[./assets/gyroid-res224-dof0.025.jpg]]
+
+*** NVidia Tesla on EC2
+
+These images were rendered using Tesla instances on AWS EC2 (back in 2013)
+
+[[./assets/gyroid-metal-dof8.jpg]]
+
+[[./assets/gyroid-tesla.jpg]]
+
+** License
+
+Copyright © 2013 - 2015 Karsten Schmidt
+
+Distributed under the Apache Software License 2.0
