@@ -162,7 +162,7 @@ float intersectsBox(const float3 bmin, const float3 bmax, const float3 p, const 
 
 int voxelLookup(__global const uchar* voxels, __private const TRenderOpts* opts, const float3 p) {
   const int4 res = opts->voxelRes;
-  const int3 q = (int3)(p * res.xyz);
+  const int3 q = convert_int3_sat(p * convert_float3(res.xyz));
   if (q.z >= 0 && q.z < res.z && q.y >= 0 && q.y < res.y && q.x >= 0 && q.x < res.x) {
     return (int)voxels[q.z * res.w + q.y * res.x + q.x];
   }
@@ -221,7 +221,7 @@ float2 distanceToScene(__global const uchar* voxels, __private const TRenderOpts
       if (v < 0) break;
       if (v > opts->isoVal) {
         const int4 vres = opts->voxelRes;
-        const int3 q = (int3)(p * vres.xyz);
+        const int3 q = convert_int3_sat(p * convert_float3(vres.xyz));
         if (smooth) {
           isec->normal = voxelNormalSmooth(voxels, opts, q);
         } else {
